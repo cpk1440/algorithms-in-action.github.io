@@ -9,7 +9,15 @@
 
 // Javascript code addition 
 
-class Node {
+/**
+ * Pure Splay Tree data structure used by the AIA controllers.
+ *
+ * This module deliberately contains no visualisation code. Controllers can
+ * build animation chunks around these operations while the data-structure
+ * behaviour remains independently testable.
+ */
+
+export class Node {
   constructor(key) {
     this.key = key;
     this.left = null;
@@ -19,232 +27,107 @@ class Node {
 
 class SplayTree {
   static newNode(key) {
-    const node = new Node(key);
-    return node;
+    return new Node(key);
   }
 
-  static rightRotate(x) {
-    const y = x.left;
-    x.left = y.right;
-    y.right = x;
-    return y;
+  static rightRotate(root) {
+    const newRoot = root.left;
+    root.left = newRoot.right;
+    newRoot.right = root;
+    return newRoot;
   }
 
-  static leftRotate(x) {
-    const y = x.right;
-    x.right = y.left;
-    y.left = x;
-    return y;
+  static leftRotate(root) {
+    const newRoot = root.right;
+    root.right = newRoot.left;
+    newRoot.left = root;
+    return newRoot;
   }
 
-  // version of splay that may be slightly less efficient but has
-  // a simpler structure for AIA
+  /**
+   * Move the requested key, or the last node reached while looking for it,
+   * to the root of the tree.
+   *
+   * The recursive structure follows the existing AIA pseudocode: it examines
+   * two levels at a time and performs rotations as recursive calls return.
+   */
   static splay(root, key) {
-    // do nothing cases (could add negation of these to other cases)
-    if (root == null
-        || root.key == key
-        || root.key > key && root.left == null
-        || root.key < key && root.right == null) {
+    if (root === null || root.key === key) {
       return root;
     }
-    // left only cases (could combine)
-    if (root.key > key && root.left.key > key && root.left.left == null) {
-      return SplayTree.rightRotate(root);
+
+    if (key < root.key) {
+      if (root.left === null) {
+        return root;
+      }
+
+      if (key < root.left.key) {
+        // Left-left: first splay inside the left-left subtree.
+        root.left.left = SplayTree.splay(root.left.left, key);
+        root = SplayTree.rightRotate(root);
+      } else if (key > root.left.key) {
+        // Left-right: first splay inside the left-right subtree.
+        root.left.right = SplayTree.splay(root.left.right, key);
+        if (root.left.right !== null) {
+          root.left = SplayTree.leftRotate(root.left);
+        }
+      }
+
+      // This is also the single-rotation case when the key is the left child.
+      return root.left === null ? root : SplayTree.rightRotate(root);
     }
-    if (root.key > key && root.left.key <= key && root.left.right == null) {
-      return SplayTree.rightRotate(root);
+
+    if (root.right === null) {
+      return root;
     }
-    // left left case
-    if (root.key > key && root.left.key > key && root.left.left !== null) {
-      root.left.left = SplayTree.splay(root.left.left, key);
-      root = SplayTree.rightRotate(root);
-      return SplayTree.rightRotate(root);
-    }
-    // left right case
-    if (root.key > key && root.left.key <= key && root.left.right !== null) {
-      root.left.right = SplayTree.splay(root.left.right, key);
-      root.left = SplayTree.leftRotate(root.left);
-      return SplayTree.rightRotate(root);
-    }
-    // right only cases (could combine)
-    if (root.key < key && root.right.key > key && root.right.left == null) {
-      return SplayTree.leftRotate(root);
-    }
-    if (root.key < key && root.right.key <= key && root.right.right == null) {
-      return SplayTree.leftRotate(root);
-    }
-    // right right case
-    if (root.key < key && root.right.key <= key && root.right.right !== null) {
+
+    if (key > root.right.key) {
+      // Right-right: first splay inside the right-right subtree.
       root.right.right = SplayTree.splay(root.right.right, key);
       root = SplayTree.leftRotate(root);
-      return SplayTree.leftRotate(root);
-    }
-    // right left case
-    if (root.key < key && root.right.key > key && root.right.left !== null) {
+    } else if (key < root.right.key) {
+      // Right-left: first splay inside the right-left subtree.
       root.right.left = SplayTree.splay(root.right.left, key);
-      root.right = SplayTree.rightRotate(root.right);
-      return SplayTree.leftRotate(root);
-    }
-/*
-    if (root.key > key) {
-      if (root.left.key > key) {
-        root.left.left = SplayTree.splay(root.left.left, key);
-        root = SplayTree.rightRotate(root);
-        return root.left == null ? root : SplayTree.rightRotate(root);
-      } else if (root.left.key <= key) {
-        root.left.right = SplayTree.splay(root.left.right, key);
-        if (root.left.right != null) {
-          root.left = SplayTree.leftRotate(root.left);
-        }
-        return root.left == null ? root : SplayTree.rightRotate(root);
+      if (root.right.left !== null) {
+        root.right = SplayTree.rightRotate(root.right);
       }
-    } else {
-      if (root.right.key > key) {
-        root.right.left = SplayTree.splay(root.right.left, key);
-        if (root.right.left != null) {
-          root.right = SplayTree.rightRotate(root.right);
-        }
-      } else if (root.right.key < key) {
-        root.right.right = SplayTree.splay(root.right.right, key);
-        root = SplayTree.leftRotate(root);
-      }
-      return root.right == null ? root : SplayTree.leftRotate(root);
     }
-*/
+
+    // This is also the single-rotation case when the key is the right child.
+    return root.right === null ? root : SplayTree.leftRotate(root);
   }
-
-/*
-  static splay(root, key) {
-    if (root == null || root.key == key) {
-      return root;
-    }
-
-    if (root.key > key) {
-      if (root.left == null) {
-        return root;
-      }
-
-      if (root.left.key > key) {
-        root.left.left = SplayTree.splay(root.left.left, key);
-        root = SplayTree.rightRotate(root);
-      } else if (root.left.key < key) {
-        root.left.right = SplayTree.splay(root.left.right, key);
-        if (root.left.right != null) {
-          root.left = SplayTree.leftRotate(root.left);
-        }
-      }
-      return root.left == null ? root : SplayTree.rightRotate(root);
-    } else {
-      if (root.right == null) {
-        return root;
-      }
-
-      if (root.right.key > key) {
-        root.right.left = SplayTree.splay(root.right.left, key);
-        if (root.right.left != null) {
-          root.right = SplayTree.rightRotate(root.right);
-        }
-      } else if (root.right.key < key) {
-        root.right.right = SplayTree.splay(root.right.right, key);
-        root = SplayTree.leftRotate(root);
-      }
-      return root.right == null ? root : SplayTree.leftRotate(root);
-    }
-  }
-*/
 
   static search(root, key) {
-    root = SplayTree.splay(root, key);
-    return root;
+    return SplayTree.splay(root, key);
   }
 
   static insert(root, key) {
-    if (root == null) {
+    if (root === null) {
       return SplayTree.newNode(key);
     }
 
-    root = SplayTree.splay(root, key);
+    const splayedRoot = SplayTree.splay(root, key);
 
-    if (root.key == key) {
-      return root;
+    // Duplicate keys are ignored. Splaying still moves the existing node to
+    // the root, which is the expected Splay Tree access behaviour.
+    if (splayedRoot.key === key) {
+      return splayedRoot;
     }
 
-    const node = SplayTree.newNode(key);
-    if (root.key > key) {
-      node.right = root;
-      node.left = root.left;
-      root.left = null;
+    const newRoot = SplayTree.newNode(key);
+
+    if (key < splayedRoot.key) {
+      newRoot.left = splayedRoot.left;
+      newRoot.right = splayedRoot;
+      splayedRoot.left = null;
     } else {
-      node.left = root;
-      node.right = root.right;
-      root.right = null;
+      newRoot.left = splayedRoot;
+      newRoot.right = splayedRoot.right;
+      splayedRoot.right = null;
     }
-    return node;
-  }
 
-  static preOrder(node) {
-    if (node != null) {
-      console.log(+ node.key + " ");
-      SplayTree.preOrder(node.left);
-      SplayTree.preOrder(node.right);
-    }
-  }
-
-  static preOrderStr(node) {
-    if (node != null) {
-      return "(" + node.key + " " +
-        SplayTree.preOrderStr(node.left) +
-        SplayTree.preOrderStr(node.right) +
-        ")";
-    } else
-        return "";
-  }
-
-  static inOrderStr(node) {
-    if (node != null) {
-      return "(" + 
-        SplayTree.inOrderStr(node.left) +
-        node.key +
-        SplayTree.inOrderStr(node.right) +
-        ")";
-    } else
-        return "";
+    return newRoot;
   }
 }
 
-let skey = 100; // search key
-let res;        //search result
-let root = null;
-console.log("Inorder traversals of the Splay tree:");
-root = SplayTree.insert(root, 90);
-root = SplayTree.insert(root, 80);
-root = SplayTree.insert(root, 88);
-root = SplayTree.insert(root, 67);
-root = SplayTree.insert(root, 44);
-root = SplayTree.insert(root, 98);
-root = SplayTree.insert(root, 33);
-root = SplayTree.insert(root, 45);
-console.log(SplayTree.inOrderStr(root));
-root = SplayTree.insert(root, 50);
-console.log(SplayTree.inOrderStr(root));
-root = SplayTree.insert(root, 200);
-console.log(SplayTree.inOrderStr(root));
-skey = 100;
-root = SplayTree.search(root, skey);
-console.log(skey + (root.key == skey? ":)": ":("));
-console.log(SplayTree.inOrderStr(root));
-root = SplayTree.insert(root, 40);
-console.log(SplayTree.inOrderStr(root));
-root = SplayTree.insert(root, 30);
-console.log(SplayTree.inOrderStr(root));
-skey = 45;
-root = SplayTree.search(root, skey);
-console.log(skey + (root.key == skey? ":)": ":("));
-console.log(SplayTree.inOrderStr(root));
-root = SplayTree.insert(root, 40);
-console.log(SplayTree.inOrderStr(root));
-skey = 250;
-root = SplayTree.search(root, skey);
-console.log(skey + (root.key == skey? ":)": ":("));
-console.log(SplayTree.inOrderStr(root));
-
+export default SplayTree;
