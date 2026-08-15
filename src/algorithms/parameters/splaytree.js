@@ -52,7 +52,7 @@ const BlueRadio = withStyles({
   // eslint-disable-next-line react/jsx-props-no-spreading
 })((props) => <Radio {...props} />);
 
-function AVLTParam({ mode, list, value }) {
+function SplayTreeParam({ mode, list, value }) {
   const { algorithm, dispatch } = useContext(GlobalContext);
   const [message, setMessage] = useState(null);
   const [localNodes, setlocalNodes] = useState(list || DEFAULT_NODES);
@@ -84,7 +84,7 @@ function AVLTParam({ mode, list, value }) {
   };
 
   /**
-   * Custom search handler for AVLTree — checks tree is not empty first.
+   * Custom search handler for Splay Tree — checks tree is not empty first.
    */
   const handleSearch = (e) => {
     e.preventDefault();
@@ -197,11 +197,11 @@ function AVLTParam({ mode, list, value }) {
 }
 
 // Define the prop types for URL Params
-AVLTParam.propTypes = {
+SplayTreeParam.propTypes = {
   alg: PropTypes.string.isRequired,
   mode: PropTypes.string.isRequired,
   list: PropTypes.string.isRequired,
   value: PropTypes.string.isRequired,
 };
 
-export default withAlgorithmParams(AVLTParam);
+export default withAlgorithmParams(SplayTreeParam);
