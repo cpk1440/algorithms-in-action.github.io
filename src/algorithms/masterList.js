@@ -583,7 +583,7 @@ const algorithmMetadata = {
 "splaytree": {
     "name": "Splay Tree",
     "category": "Insert/Search",
-    "noDeploy": true,
+    "noDeploy": false,
     "keywords": [
       "BST",
       "binary",
