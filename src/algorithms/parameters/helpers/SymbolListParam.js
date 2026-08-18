@@ -39,12 +39,12 @@ function SymbolListParam({
         e.preventDefault();
         const inputValue = e.target[0].value.replace(/\s+/g, '');
         const tokens = inputValue.split(',');
-        const ops = [];
+        const operations = [];
 
         for (const token of tokens){
             // Prevent empty inputs
             if(token === ''){
-                setMessage('Input cannot be empty!');
+                setMessage(`Invalid input: ${token}. Input cannot be empty!`);
                 return;
             }
             
@@ -54,15 +54,22 @@ function SymbolListParam({
 
                 // Check for a valid search value
                 if(!/^-?\d+$/.test(valueString)){
-                    setMessage('Invalid search value!');
+                    setMessage(`Invalid input: ${token}. Can't do a search with this!`);
                     return;
                 }
 
-                // Add search operation to the list
+                // Push search value
                 operations.push({ type: 'search', value: parseInt(valueString, 10) });
+            } else{
+                if(!/^-?\d+$/.test(token)){
+                    setMessage(`Invalid input: ${token}. Can't build a tree with this!`);
+                    return;
+                }
+                // Push insertion value
+                operations.push({ type: 'insert', value: parseInt(token, 10) });
             }
         }
-        dispatch(GlobalActions.RUN_ALGORITHM, {name, mode,nodes});
+        dispatch(GlobalActions.RUN_ALGORITHM, {name, mode, operations});
         setMessage(null);
     };
 
@@ -82,7 +89,7 @@ function SymbolListParam({
       handleSubmit={
         handleSubmit && typeof handleSubmit === 'function'
           ? handleSubmit
-          : handleDefaultSubmit
+          : handleSymboleSubmit
       }
     >
       <ControlButton
