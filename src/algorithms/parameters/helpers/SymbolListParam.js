@@ -107,4 +107,5 @@ function SymbolListParam({
     )
 }
 
+export default SymbolListParam;
 
