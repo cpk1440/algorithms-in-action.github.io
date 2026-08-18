@@ -172,3 +172,279 @@ describe('SplayTree.insert', () => {
     expect(inOrder(root)).toEqual([10, 20, 30, 40, 50, 60, 70]);
   });
 });
+
+describe('SplayTree rotation events', () => {
+  it('reports single right and left rotations with existing bookmarks', () => {
+    const rightRoot = new Node(100);
+    rightRoot.left = new Node(50);
+    rightRoot.left.right = new Node(75);
+    const rightEvents = [];
+
+    SplayTree.splay(rightRoot, 50, event => rightEvents.push(event));
+
+    expect(rightEvents).toEqual([{
+      type: 'rotation',
+      direction: 'right',
+      bookmark: 'LE-rot1',
+      splayCase: 'LE',
+      parentKey: null,
+      pivotKey: 100,
+      newRootKey: 50,
+      transferredSubtreeKey: 75,
+    }]);
+
+    const leftRoot = new Node(25);
+    leftRoot.right = new Node(75);
+    leftRoot.right.left = new Node(50);
+    const leftEvents = [];
+
+    SplayTree.splay(leftRoot, 75, event => leftEvents.push(event));
+
+    expect(leftEvents).toEqual([{
+      type: 'rotation',
+      direction: 'left',
+      bookmark: 'RE-rot1',
+      splayCase: 'RE',
+      parentKey: null,
+      pivotKey: 25,
+      newRootKey: 75,
+      transferredSubtreeKey: 50,
+    }]);
+  });
+
+  it('reports both rotations in left-left and right-right cases', () => {
+    const leftLeftRoot = new Node(100);
+    leftLeftRoot.left = new Node(50);
+    leftLeftRoot.left.left = new Node(25);
+    const leftLeftEvents = [];
+
+    SplayTree.splay(
+      leftLeftRoot,
+      25,
+      event => leftLeftEvents.push(event),
+    );
+
+    expect(leftLeftEvents.map(event => ({
+      direction: event.direction,
+      bookmark: event.bookmark,
+      splayCase: event.splayCase,
+      pivotKey: event.pivotKey,
+      newRootKey: event.newRootKey,
+    }))).toEqual([
+      {
+        direction: 'right',
+        bookmark: 'LL-rot1',
+        splayCase: 'LL',
+        pivotKey: 100,
+        newRootKey: 50,
+      },
+      {
+        direction: 'right',
+        bookmark: 'LL-rot2',
+        splayCase: 'LL',
+        pivotKey: 50,
+        newRootKey: 25,
+      },
+    ]);
+
+    const rightRightRoot = new Node(25);
+    rightRightRoot.right = new Node(50);
+    rightRightRoot.right.right = new Node(100);
+    const rightRightEvents = [];
+
+    SplayTree.splay(
+      rightRightRoot,
+      100,
+      event => rightRightEvents.push(event),
+    );
+
+    expect(rightRightEvents.map(event => ({
+      direction: event.direction,
+      bookmark: event.bookmark,
+      splayCase: event.splayCase,
+      pivotKey: event.pivotKey,
+      newRootKey: event.newRootKey,
+    }))).toEqual([
+      {
+        direction: 'left',
+        bookmark: 'LL-rot1',
+        splayCase: 'RR',
+        pivotKey: 25,
+        newRootKey: 50,
+      },
+      {
+        direction: 'left',
+        bookmark: 'LL-rot2',
+        splayCase: 'RR',
+        pivotKey: 50,
+        newRootKey: 100,
+      },
+    ]);
+  });
+
+  it('reports both rotations in left-right and right-left cases', () => {
+    const leftRightRoot = new Node(100);
+    leftRightRoot.left = new Node(50);
+    leftRightRoot.left.right = new Node(75);
+    const leftRightEvents = [];
+
+    SplayTree.splay(
+      leftRightRoot,
+      75,
+      event => leftRightEvents.push(event),
+    );
+
+    expect(leftRightEvents.map(event => ({
+      direction: event.direction,
+      bookmark: event.bookmark,
+      parentKey: event.parentKey,
+      pivotKey: event.pivotKey,
+      newRootKey: event.newRootKey,
+    }))).toEqual([
+      {
+        direction: 'left',
+        bookmark: 'LR-rot1',
+        parentKey: 100,
+        pivotKey: 50,
+        newRootKey: 75,
+      },
+      {
+        direction: 'right',
+        bookmark: 'LR-rot2',
+        parentKey: null,
+        pivotKey: 100,
+        newRootKey: 75,
+      },
+    ]);
+
+    const rightLeftRoot = new Node(25);
+    rightLeftRoot.right = new Node(100);
+    rightLeftRoot.right.left = new Node(75);
+    const rightLeftEvents = [];
+
+    SplayTree.splay(
+      rightLeftRoot,
+      75,
+      event => rightLeftEvents.push(event),
+    );
+
+    expect(rightLeftEvents.map(event => ({
+      direction: event.direction,
+      bookmark: event.bookmark,
+      parentKey: event.parentKey,
+      pivotKey: event.pivotKey,
+      newRootKey: event.newRootKey,
+    }))).toEqual([
+      {
+        direction: 'right',
+        bookmark: 'LR-rot1',
+        parentKey: 25,
+        pivotKey: 100,
+        newRootKey: 75,
+      },
+      {
+        direction: 'left',
+        bookmark: 'LR-rot2',
+        parentKey: null,
+        pivotKey: 25,
+        newRootKey: 75,
+      },
+    ]);
+  });
+
+  it('records the parent of a rotation inside a recursive subtree', () => {
+    const root = new Node(100);
+    root.left = new Node(50);
+    root.left.left = new Node(25);
+    root.left.left.left = new Node(10);
+    const events = [];
+
+    SplayTree.splay(root, 10, event => events.push(event));
+
+    expect(events[0]).toMatchObject({
+      direction: 'right',
+      bookmark: 'LE-rot1',
+      parentKey: 50,
+      pivotKey: 25,
+      newRootKey: 10,
+    });
+  });
+});
+
+describe('SplayTree insertion branch events', () => {
+  it('reports empty-tree, left, and right insertion decisions', () => {
+    const emptyEvents = [];
+    SplayTree.insert(null, 40, event => emptyEvents.push(event));
+
+    expect(emptyEvents).toEqual([{
+      type: 'insertion',
+      action: 'empty-tree',
+      bookmark: 'Main',
+      key: 40,
+      rootKey: null,
+    }]);
+
+    const leftEvents = [];
+    SplayTree.insert(
+      new Node(40),
+      20,
+      event => leftEvents.push(event),
+    );
+
+    expect(leftEvents).toEqual([{
+      type: 'insertion',
+      action: 'insert-left',
+      bookmark: 'Main',
+      key: 20,
+      rootKey: 40,
+    }]);
+
+    const rightEvents = [];
+    SplayTree.insert(
+      new Node(40),
+      60,
+      event => rightEvents.push(event),
+    );
+
+    expect(rightEvents).toEqual([{
+      type: 'insertion',
+      action: 'insert-right',
+      bookmark: 'Main',
+      key: 60,
+      rootKey: 40,
+    }]);
+  });
+
+  it('reports a duplicate after any rotations used to access it', () => {
+    const root = new Node(20);
+    root.right = new Node(40);
+    const events = [];
+
+    const result = SplayTree.insert(
+      root,
+      40,
+      event => events.push(event),
+    );
+
+    expect(result.key).toBe(40);
+    expect(events.map(event => ({
+      type: event.type,
+      action: event.action,
+      direction: event.direction,
+      bookmark: event.bookmark,
+    }))).toEqual([
+      {
+        type: 'rotation',
+        action: undefined,
+        direction: 'left',
+        bookmark: 'RE-rot1',
+      },
+      {
+        type: 'insertion',
+        action: 'duplicate',
+        direction: undefined,
+        bookmark: 'Main',
+      },
+    ]);
+  });
+});

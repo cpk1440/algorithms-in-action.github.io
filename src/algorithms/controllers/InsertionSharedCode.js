@@ -34,6 +34,7 @@
 import GraphTracer from '../../components/DataStructures/Graph/GraphTracer';
 import Array1DTracer from '../../components/DataStructures/Array/Array1DTracer';
 import { areExpanded } from './collapseChunkPlugin';
+import SplayTree from './splaytree';
 
 // Moving to new color scheme
 // XXX Currently code is a bit shit  due to previous use of older color
@@ -63,7 +64,6 @@ function isRecursionExpanded() {
 
 let globalRoot;
 let isAVL = false; // flag for AVLT/BST (needed for height)
-let isSplay = false; // flag for AVLT/BST (needed for height)
 // Tree Node class
 class TreeNode {
 	constructor(key) {
@@ -1103,20 +1103,173 @@ function insertOrSearch(chunker, root, key, currIndex) {
     return r;
 } 
 
+// Create a snapshot of the splay tree for transitioning between
+// states in the visualisation. This function collects the keys of all nodes and
+// the edges between them, as well as the key of the root node.
+function createSplaySnapshot(root) {
+    const nodeKeys = [];
+    const edges = [];
 
-// XXX hacked to support splay trees (isSplay = true) - re-think
-// interface - arg currently true/false/'splay' which isn't great
+    function visit(node) {
+        if (node === null) return;
+
+        nodeKeys.push(node.key);
+
+        if (node.left !== null) {
+            edges.push([node.key, node.left.key]);
+        }
+
+        if (node.right !== null) {
+            edges.push([node.key, node.right.key]);
+        }
+
+        visit(node.left);
+        visit(node.right);
+    }
+    visit(root);
+
+    return {
+        nodeKeys,
+        edges,
+        rootKey: root.key,
+    };
+}
+
+// Get the path from the root to a specific key in the splay tree
+// This function traverses the tree and
+// records the keys of the nodes along the path to the target key.
+function getSplayTreePath(root, key) {
+    const path = [];
+    let current = root;
+
+    while (current !== null) {
+        path.push(current.key);
+        if (key === current.key) {
+            break;
+        }
+        current = key < current.key ? current.left : current.right;
+    }
+    return path;
+}
+
+// Register one visual step for a rotation reported by the pure Splay Tree.
+// The event contains only node keys, so the controller remains responsible
+// for translating the algorithm operation into GraphTracer updates.
+function addSplayRotationChunk(chunker, event) {
+    chunker.add(
+        event.bookmark,
+        (vis, rotation) => {
+            const graph = vis.graph;
+            const {
+                direction,
+                parentKey,
+                pivotKey,
+                newRootKey,
+                transferredSubtreeKey,
+            } = rotation;
+
+            graph.setPauseLayout(true);
+
+            // Remove traversal or previous-rotation colours before showing
+            // the current rotation.
+            graph.nodes.forEach(({ id }) => {
+                graph.setNodeColor(id, undefined);
+            });
+            graph.edges.forEach(({ source, target }) => {
+                graph.setEdgeColor(source, target, undefined);
+            });
+
+            // Reconnect the rotated subtree to its parent, if this is not a
+            // rotation at the root of the whole tree.
+            if (parentKey !== null) {
+                graph.removeEdge(parentKey, pivotKey);
+                graph.addEdge(parentKey, newRootKey);
+            }
+
+            // Apply the local rotation. These edge changes are the same for
+            // left and right rotations; the node keys describe the direction.
+            graph.removeEdge(pivotKey, newRootKey);
+            if (transferredSubtreeKey !== null) {
+                graph.removeEdge(newRootKey, transferredSubtreeKey);
+                graph.addEdge(pivotKey, transferredSubtreeKey);
+            }
+            graph.addEdge(newRootKey, pivotKey);
+
+            graph.setNodeColor(pivotKey, colors.ROT_N);
+            graph.setNodeColor(newRootKey, colors.ROT_N);
+            graph.setEdgeColor(newRootKey, pivotKey, colors.ROT_E);
+            graph.directed(false);
+            graph.setPauseLayout(false);
+            graph.layoutBST(graph.getRoot(), true);
+            graph.setFunctionName(
+                `${direction === 'right' ? 'Right' : 'Left'} rotation: ${pivotKey}`,
+            );
+        },
+        [event],
+        1,
+    );
+}
+
+function getSplayInsertionMessage(event) {
+    switch (event.action) {
+        case 'empty-tree':
+            return `Insert ${event.key} into the empty tree`;
+        case 'insert-left':
+            return `Insert ${event.key} above and left of ${event.rootKey}`;
+        case 'insert-right':
+            return `Insert ${event.key} above and right of ${event.rootKey}`;
+        case 'duplicate':
+            return `Duplicate ignored: ${event.key}`;
+        default:
+            return `Insert: ${event.key}`;
+    }
+}
+
+// Show the insertion decision after splaying and before the completed-tree
+// snapshot is displayed. Main is used because the referenced insert_left and
+// insert_right code blocks do not define their own pseudocode bookmarks.
+function addSplayInsertionBranchChunk(chunker, event) {
+    chunker.add(
+        event.bookmark,
+        (vis, insertion) => {
+            const graph = vis.graph;
+
+            graph.nodes.forEach(({ id }) => {
+                graph.setNodeColor(id, undefined);
+            });
+            graph.edges.forEach(({ source, target }) => {
+                graph.setEdgeColor(source, target, undefined);
+            });
+
+            if (insertion.rootKey !== null) {
+                const rootColor = insertion.action === 'duplicate'
+                    ? colors.FOUND_N
+                    : colors.PATH_N;
+                graph.setNodeColor(insertion.rootKey, rootColor);
+            }
+
+            graph.setFunctionName(getSplayInsertionMessage(insertion));
+            graph.setFunctionInsertText();
+        },
+        [event],
+        1,
+    );
+}
+
+
+// XXX interface currently uses true/false/'splay' to select a tree type;
+// consider replacing it with named options in a future refactor.
 // default is recursive BST insertion 
 // If isAVL = true we have recursive AVLT insertion
 // If isInsert = true 
 export function createTreeInsertionController(isAVLp = false) {
+    const isSplayController = (isAVLp === 'splay');
     // const treeType = isAVL ? 'AVL' : 'BST'; // no longer used
     // const functionPrefix = isAVL ? 'AVLT' : 'BST';
     return {
         // visualiser used only for insert
         initVisualisers({ visualiser }) {
             isAVL = (isAVLp === true);
-            isSplay = (isAVLp === 'splay');
             return {
                 graph: {
                     // XXX specialise "Tree" label???
@@ -1151,9 +1304,114 @@ export function createTreeInsertionController(isAVLp = false) {
                 [],
                 1
             );
-            // We need at least one bookmark; splay trees NYI so we just
-            // return here but it allows pseudocode to be displayed
-            if (isSplay) return;
+            // Splay insertion stays in the pure data structure. Visual updates
+            // are connected incrementally after the algorithm call is verified.
+            if (isSplayController) {
+                let root = null;
+
+                nodes.forEach((key) => {
+                    const searchPath = getSplayTreePath(root, key);
+
+                    searchPath.forEach((nodeKey, index) => {
+                        const parentKey = index === 0
+                            ? null
+                            : searchPath[index - 1];
+
+                        chunker.add(
+                            'switchPath',
+                            (vis, currentKey, previousKey, insertedKey) => {
+                                const graph = vis.graph;
+                                graph.setFunctionName(`Insert: ${insertedKey}`);
+
+                                if (previousKey !== null) {
+                                    graph.setNodeColor(previousKey, colors.PATH_N);
+                                    graph.setEdgeColor(
+                                        previousKey,
+                                        currentKey,
+                                        colors.PATH_E,
+                                    );
+                                }
+                                graph.setNodeColor(currentKey, colors.PATH_N);
+                            },
+                            [nodeKey, parentKey, key],
+                            1,
+                        );
+                    });
+
+                    const algorithmEvents = [];
+                    root = SplayTree.insert(
+                        root,
+                        key,
+                        event => algorithmEvents.push(event),
+                    );
+                    algorithmEvents.forEach(event => {
+                        if (event.type === 'rotation') {
+                            addSplayRotationChunk(chunker, event);
+                        } else if (event.type === 'insertion') {
+                            addSplayInsertionBranchChunk(chunker, event);
+                        }
+                    });
+                    const insertionEvent = algorithmEvents.find(
+                        event => event.type === 'insertion',
+                    );
+
+                    const {
+                        nodeKeys,
+                        edges,
+                        rootKey,
+                    } = createSplaySnapshot(root);
+
+                    chunker.add(
+                        'Main',
+                        (
+                            vis,
+                            keys,
+                            treeEdges,
+                            snapshotRoot,
+                            insertedKey,
+                            insertion,
+                        ) => {
+                            const graph = vis.graph;
+
+                            // Splaying changes the parent-child relationships,
+                            // so remove the previous edges before adding the snapshot edges.
+                            graph.setPauseLayout(true);
+                            [...graph.edges].forEach(({ source, target }) => {
+                                graph.removeEdge(source, target);
+                            });
+                            // Existing nodes are ignored by addNode. Clear the
+                            // traversal colour when displaying the new snapshot.
+                            keys.forEach(nodeKey => {
+                                graph.addNode(nodeKey, nodeKey);
+                                graph.setNodeColor(nodeKey, undefined);
+                            });
+
+                            // add current snapshot edges
+                            treeEdges.forEach(([parent, child]) => {
+                                graph.addEdge(parent, child);
+                            });
+
+                            graph.directed(false);
+                            graph.setPauseLayout(false);
+                            graph.layoutBST(snapshotRoot, true);
+                            const rootColor = insertion.action === 'duplicate'
+                                ? colors.FOUND_N
+                                : colors.NEW_N;
+                            graph.setNodeColor(snapshotRoot, rootColor);
+                            graph.setFunctionName(
+                                insertion.action === 'duplicate'
+                                    ? getSplayInsertionMessage(insertion)
+                                    : `Inserted: ${insertedKey}`,
+                            );
+                            graph.setFunctionInsertText();
+                        },
+                        [nodeKeys, edges, rootKey, key, insertionEvent],
+                        1,
+                    );
+                });
+
+                return root;
+            }
 
             // initialise the first key insertion
             // We now skip boxes etc even when recursion is expanded and
@@ -1301,4 +1559,3 @@ export default createTreeInsertionController(false);
 
 export const AVLTreeInsertion = createTreeInsertionController(true);
 export const BSTreeSearch = createTreeSearchController(false);
-
