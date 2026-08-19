@@ -89,7 +89,7 @@ function SymbolListParam({
       handleSubmit={
         handleSubmit && typeof handleSubmit === 'function'
           ? handleSubmit
-          : handleSymboleSubmit
+          : handleSymbolSubmit
       }
     >
       <ControlButton
