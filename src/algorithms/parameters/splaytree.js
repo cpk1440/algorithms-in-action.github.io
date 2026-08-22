@@ -28,7 +28,7 @@ import PropTypes from 'prop-types'; // Import this for URL Param
 import { withAlgorithmParams } from './helpers/urlHelpers';
 
 import { ERRORS, EXAMPLES } from './helpers/ErrorExampleStrings';
-import SymbolListParam from './SymbolListParam';
+import SymbolListParam from './helpers/SymbolListParam';
 
 const DEFAULT_NODES = genUniqueRandNumList(12, 1, 100);
 //const DEFAULT_TARGET = '2';

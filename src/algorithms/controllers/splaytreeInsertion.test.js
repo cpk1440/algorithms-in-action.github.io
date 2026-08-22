@@ -419,4 +419,107 @@ describe('SplayTreeInsertion controller', () => {
       10,
     ]);
   });
+
+  describe('combined operations', () => {
+    it('accepts insertion operations', () => {
+      const root = SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'insert', value: 40 },
+          { type: 'insert', value: 20 },
+          { type: 'insert', value: 60 },
+        ],
+      });
+
+      expect(root.key).toBe(60);
+      expect(inOrder(root)).toEqual([20, 40, 60]);
+    });
+
+    it('carries the root from insertion into search', () => {
+      const root = SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'insert', value: 40 },
+          { type: 'insert', value: 20 },
+          { type: 'insert', value: 60 },
+          { type: 'search', value: 20 },
+        ],
+      });
+
+      expect(root.key).toBe(20);
+      expect(inOrder(root)).toEqual([20, 40, 60]);
+    });
+
+    it('inserts into the tree produced by the preceding search', () => {
+      const root = SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'insert', value: 40 },
+          { type: 'insert', value: 20 },
+          { type: 'insert', value: 60 },
+          { type: 'search', value: 20 },
+          { type: 'insert', value: 30 },
+        ],
+      });
+
+      expect(root.key).toBe(30);
+      expect(inOrder(root)).toEqual([20, 30, 40, 60]);
+    });
+
+    it('handles a search on an empty tree', () => {
+      const root = SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'search', value: 10 },
+        ],
+      });
+
+      expect(root).toBeNull();
+    });
+
+    it('does not insert the target of a failed search', () => {
+      const root = SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'insert', value: 20 },
+          { type: 'insert', value: 40 },
+          { type: 'search', value: 30 },
+        ],
+      });
+
+      expect(root.key).toBe(20);
+      expect(inOrder(root)).toEqual([20, 40]);
+    });
+
+    it('ignores duplicate insertions', () => {
+      const root = SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'insert', value: 20 },
+          { type: 'insert', value: 20 },
+        ],
+      });
+
+      expect(root.key).toBe(20);
+      expect(countNodes(root)).toBe(1);
+    });
+
+    it('carries state through multiple searches', () => {
+      const root = SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'insert', value: 40 },
+          { type: 'insert', value: 20 },
+          { type: 'insert', value: 60 },
+          { type: 'search', value: 20 },
+          { type: 'search', value: 60 },
+          { type: 'insert', value: 30 },
+        ],
+      });
+
+      expect(root.key).toBe(30);
+      expect(inOrder(root)).toEqual([20, 30, 40, 60]);
+    });
+
+    it('rejects unknown operations', () => {
+      expect(() => SplayTreeInsertion.run(createChunker(), {
+        operations: [
+          { type: 'delete', value: 20 },
+        ],
+      })).toThrow('Unknown Splay Tree operation: delete');
+    });
+  });
 });
