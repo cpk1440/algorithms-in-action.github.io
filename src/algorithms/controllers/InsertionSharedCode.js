@@ -1286,9 +1286,25 @@ export function createTreeInsertionController(isAVLp = false) {
         * @param {array} nodes array of numbers needs to be inserted
         */
         // nodes used for insert; visualiser and target used for search
-        run(chunker, { nodes, visualiser, target }) {
+        run(chunker, {
+            nodes = [],
+            operations,
+            visualiser,
+            target,
+        }) {
             isInsert = true;
-            if (nodes.length === 0) return;
+            const operationList = isSplayController
+                ? (
+                    Array.isArray(operations)
+                        ? operations
+                        : nodes.map(value => ({
+                            type: 'insert',
+                            value,
+                        }))
+                )
+                : nodes;
+
+            if (operationList.length === 0) return;
 
             // initial settings for the visualisation
             chunker.add(
@@ -1309,7 +1325,26 @@ export function createTreeInsertionController(isAVLp = false) {
             if (isSplayController) {
                 let root = null;
 
-                nodes.forEach((key) => {
+                operationList.forEach(operation => {
+                    const { type, value: key } = operation;
+
+                    if (!Number.isInteger(key)) {
+                        throw new Error(
+                            `Invalid Splay Tree key: ${String(key)}`,
+                        );
+                    }
+
+                    if (type === 'search') {
+                        root = SplayTree.search(root, key);
+                        return;
+                    }
+
+                    if (type !== 'insert') {
+                        throw new Error(
+                            `Unknown Splay Tree operation: ${String(type)}`,
+                        );
+                    }
+
                     const searchPath = getSplayTreePath(root, key);
 
                     searchPath.forEach((nodeKey, index) => {
