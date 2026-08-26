@@ -204,6 +204,30 @@ describe('SplayTreeInsertion controller', () => {
     );
   });
 
+  it('registers the search path and rotation chunks for a splay search operation', () => {
+    const chunks = [];
+
+    SplayTreeInsertion.run(
+      createChunker(chunks),
+      {
+        operations: [
+          { type: 'insert', value: 40 },
+          { type: 'insert', value: 20 },
+          { type: 'insert', value: 60 },
+          { type: 'search', value: 20 },
+        ],
+      },
+    );
+
+    expect(chunks.some(chunk => chunk.bookmark === 'switchPath')).toBe(true);
+    expect(chunks.some(chunk => (
+      chunk.bookmark === 'LE-rot1'
+      || chunk.bookmark === 'LR-rot1'
+      || chunk.bookmark === 'LL-rot1'
+      || chunk.bookmark === 'RE-rot1'
+    ))).toBe(true);
+  });
+
   it('registers the BST search path before each Splay insertion', () => {
     const chunks = [];
 

@@ -1138,7 +1138,7 @@ function createSplaySnapshot(root) {
 // Get the path from the root to a specific key in the splay tree
 // This function traverses the tree and
 // records the keys of the nodes along the path to the target key.
-function getSplayTreePath(root, key) {
+export function getSplayTreePath(root, key) {
     const path = [];
     let current = root;
 
@@ -1155,7 +1155,7 @@ function getSplayTreePath(root, key) {
 // Register one visual step for a rotation reported by the pure Splay Tree.
 // The event contains only node keys, so the controller remains responsible
 // for translating the algorithm operation into GraphTracer updates.
-function addSplayRotationChunk(chunker, event) {
+export function addSplayRotationChunk(chunker, event) {
     chunker.add(
         event.bookmark,
         (vis, rotation) => {

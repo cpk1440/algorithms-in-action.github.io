@@ -7,6 +7,7 @@
  */
 
 import SplayTree from './splaytree';
+import { addSplayRotationChunk, getSplayTreePath } from './InsertionSharedCode';
 
 export default {
     /**
@@ -47,6 +48,27 @@ export default {
         }
 
         const nestedRoot = buildNested(rootId);
+        const searchPath = getSplayTreePath(nestedRoot, target);
+
+        searchPath.forEach((nodeKey, index) => {
+            const parentKey = index === 0 ? null : searchPath[index - 1];
+
+            chunker.add(
+                'switchPath',
+                (vis, currentKey, previousKey, searchedKey) => {
+                    const graph = vis.graph;
+                    graph.setFunctionName(`Search: ${searchedKey}`);
+
+                    if (previousKey !== null) {
+                        graph.setNodeColor(previousKey, '#A9D6FF');
+                        graph.setEdgeColor(previousKey, currentKey, '#A9D6FF');
+                    }
+                    graph.setNodeColor(currentKey, '#A9D6FF');
+                },
+                [nodeKey, parentKey, target],
+                1,
+            );
+        });
 
         chunker.add('Splay_Search(t, k)', (vis) => {
             vis.graph.setZoom(0.55);
@@ -55,9 +77,18 @@ export default {
             vis.graph.setFunctionName('Splay_Search');
         }, [rootId]);
 
+        const algorithmEvents = [];
         // perform the splay (this moves the accessed node, or the last accessed
         // node while searching, to the root)
-        const newRoot = SplayTree.search(nestedRoot, target);
+        const newRoot = SplayTree.search(nestedRoot, target, event => {
+            if (event.type === 'rotation') {
+                algorithmEvents.push(event);
+            }
+        });
+
+        algorithmEvents.forEach(event => {
+            addSplayRotationChunk(chunker, event);
+        });
 
         // convert nested tree back into flat edges on the visualiser
         const g = visualiser.graph.instance;
