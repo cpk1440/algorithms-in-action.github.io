@@ -472,6 +472,40 @@ describe('SplayTreeInsertion controller', () => {
       expect(inOrder(root)).toEqual([20, 40, 60]);
     });
 
+    it('animates a search after inserting 2, 10, and 34', () => {
+      const chunks = [];
+
+      SplayTreeInsertion.run(createChunker(chunks), {
+        operations: [
+          { type: 'insert', value: 2 },
+          { type: 'insert', value: 10 },
+          { type: 'insert', value: 34 },
+          { type: 'search', value: 2 },
+        ],
+      });
+
+      const searchChunks = chunks.slice(-6);
+
+      expect(searchChunks.filter(chunk => chunk.bookmark === 'switchPath'))
+        .toHaveLength(3);
+      expect(searchChunks.map(chunk => chunk.bookmark)).toEqual([
+        'switchPath',
+        'switchPath',
+        'switchPath',
+        'LL-rot1',
+        'LL-rot2',
+        'Main',
+      ]);
+      expect(searchChunks[5].args[2]).toBe(2);
+      expect(searchChunks[5].args[0]).toEqual([2, 10, 34]);
+      expect(searchChunks[5].args[1]).toEqual([
+        [2, 10],
+        [10, 34],
+      ]);
+      expect(searchChunks[5].args[3]).toBe(2);
+      expect(searchChunks[5].args[4]).toBe(true);
+    });
+
     it('inserts into the tree produced by the preceding search', () => {
       const root = SplayTreeInsertion.run(createChunker(), {
         operations: [

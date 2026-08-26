@@ -1256,6 +1256,61 @@ function addSplayInsertionBranchChunk(chunker, event) {
     );
 }
 
+function addSplaySearchSnapshotChunk(chunker, root, target) {
+    if (root === null) {
+        chunker.add(
+            'Main',
+            (vis, searchedKey) => {
+                vis.graph.setFunctionName(`Search failed: ${searchedKey}`);
+                vis.graph.setFunctionInsertText();
+            },
+            [target],
+            1,
+        );
+        return;
+    }
+
+    const {
+        nodeKeys,
+        edges,
+        rootKey,
+    } = createSplaySnapshot(root);
+    const found = rootKey === target;
+
+    chunker.add(
+        'Main',
+        (vis, keys, treeEdges, snapshotRoot, searchedKey, isFound) => {
+            const graph = vis.graph;
+
+            graph.setPauseLayout(true);
+            [...graph.edges].forEach(({ source, target: child }) => {
+                graph.removeEdge(source, child);
+            });
+            keys.forEach(nodeKey => {
+                graph.addNode(nodeKey, nodeKey);
+                graph.setNodeColor(nodeKey, undefined);
+            });
+            treeEdges.forEach(([parent, child]) => {
+                graph.addEdge(parent, child);
+            });
+
+            graph.directed(false);
+            graph.setPauseLayout(false);
+            graph.layoutBST(snapshotRoot, true);
+            graph.setNodeColor(
+                searchedKey,
+                isFound ? colors.FOUND_N : colors.PATH_N,
+            );
+            graph.setFunctionName(
+                isFound ? `Found: ${searchedKey}` : `Search failed: ${searchedKey}`,
+            );
+            graph.setFunctionInsertText();
+        },
+        [nodeKeys, edges, rootKey, target, found],
+        1,
+    );
+}
+
 
 // XXX interface currently uses true/false/'splay' to select a tree type;
 // consider replacing it with named options in a future refactor.
@@ -1335,7 +1390,46 @@ export function createTreeInsertionController(isAVLp = false) {
                     }
 
                     if (type === 'search') {
-                        root = SplayTree.search(root, key);
+                        const searchPath = getSplayTreePath(root, key);
+
+                        searchPath.forEach((nodeKey, index) => {
+                            const parentKey = index === 0
+                                ? null
+                                : searchPath[index - 1];
+
+                            chunker.add(
+                                'switchPath',
+                                (vis, currentKey, previousKey, searchedKey) => {
+                                    const graph = vis.graph;
+                                    graph.setFunctionName(`Search: ${searchedKey}`);
+
+                                    if (previousKey !== null) {
+                                        graph.setNodeColor(previousKey, colors.PATH_N);
+                                        graph.setEdgeColor(
+                                            previousKey,
+                                            currentKey,
+                                            colors.PATH_E,
+                                        );
+                                    }
+                                    graph.setNodeColor(currentKey, colors.PATH_N);
+                                },
+                                [nodeKey, parentKey, key],
+                                1,
+                            );
+                        });
+
+                        const algorithmEvents = [];
+                        root = SplayTree.search(
+                            root,
+                            key,
+                            event => algorithmEvents.push(event),
+                        );
+                        algorithmEvents.forEach(event => {
+                            if (event.type === 'rotation') {
+                                addSplayRotationChunk(chunker, event);
+                            }
+                        });
+                        addSplaySearchSnapshotChunk(chunker, root, key);
                         return;
                     }
 
