@@ -7,7 +7,7 @@
  */
 
 import SplayTree from './splaytree';
-import { addSplayRotationChunk, getSplayTreePath } from './InsertionSharedCode';
+import { addSplayRotationChunks, getSplayTreePath } from './InsertionSharedCode';
 
 export default {
     /**
@@ -86,9 +86,7 @@ export default {
             }
         });
 
-        algorithmEvents.forEach(event => {
-            addSplayRotationChunk(chunker, event);
-        });
+        addSplayRotationChunks(chunker, algorithmEvents, 'search', rootId);
 
         // convert nested tree back into flat edges on the visualiser
         const g = visualiser.graph.instance;
@@ -113,18 +111,23 @@ export default {
         // layout the tree with the new root
         if (newRoot) {
             g.layoutTree(newRoot.key);
-            g.directed(false);
+            g.directed(true);
             g.layout();
         }
 
         // set message and return status based on whether target reached root
         if (newRoot && newRoot.key === target) {
-            chunker.add('return t', (vis) => vis.graph.setText('Key found'));
+            chunker.add('return t', (vis) => {
+                if (vis.graph.clearTID) vis.graph.clearTID();
+                vis.graph.setText('Key found');
+            });
             return 'success';
         }
 
-        chunker.add('return NotFound', (vis) => vis.graph.setText('Key not found'));
+        chunker.add('return NotFound', (vis) => {
+            if (vis.graph.clearTID) vis.graph.clearTID();
+            vis.graph.setText('Key not found');
+        });
         return 'fail';
     },
 };
-

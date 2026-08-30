@@ -107,7 +107,7 @@ class SplayTree {
    * The recursive structure follows the existing AIA pseudocode: it examines
    * two levels at a time and performs rotations as recursive calls return.
    */
-  static splay(root, key, onEvent = null, parentKey = null) {
+  static splay(root, key, onEvent = null, parentKey = null, depth = 1) {
     if (root === null || root.key === key) {
       return root;
     }
@@ -127,11 +127,13 @@ class SplayTree {
           key,
           onEvent,
           root.left.key,
+          depth + 1,
         );
         root = SplayTree.rightRotateWithEvent(root, onEvent, {
           bookmark: 'LL-rot1',
           splayCase,
           parentKey,
+          depth,
         });
       } else if (key > root.left.key) {
         splayCase = 'LR';
@@ -141,12 +143,14 @@ class SplayTree {
           key,
           onEvent,
           root.left.key,
+          depth + 1,
         );
         if (root.left.right !== null) {
           root.left = SplayTree.leftRotateWithEvent(root.left, onEvent, {
             bookmark: 'LR-rot1',
             splayCase,
             parentKey: root.key,
+            depth,
           });
         }
       }
@@ -158,6 +162,7 @@ class SplayTree {
         bookmark: splayCase === 'LE' ? 'LE-rot1' : `${splayCase}-rot2`,
         splayCase,
         parentKey,
+        depth,
       });
     }
 
@@ -175,12 +180,14 @@ class SplayTree {
         key,
         onEvent,
         root.right.key,
+        depth + 1,
       );
       root = SplayTree.leftRotateWithEvent(root, onEvent, {
         // The existing pseudocode reuses the LL rotation bookmarks here.
         bookmark: 'LL-rot1',
         splayCase,
         parentKey,
+        depth,
       });
     } else if (key < root.right.key) {
       splayCase = 'RL';
@@ -190,12 +197,14 @@ class SplayTree {
         key,
         onEvent,
         root.right.key,
+        depth + 1,
       );
       if (root.right.left !== null) {
         root.right = SplayTree.rightRotateWithEvent(root.right, onEvent, {
           bookmark: 'LR-rot1',
           splayCase,
           parentKey: root.key,
+          depth,
         });
       }
     }
@@ -211,6 +220,7 @@ class SplayTree {
       bookmark,
       splayCase,
       parentKey,
+      depth,
     });
   }
 

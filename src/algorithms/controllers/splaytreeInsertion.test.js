@@ -1,7 +1,13 @@
 /* eslint-disable no-undef */
 
 import SplayTreeInsertion from './splaytreeInsertion';
+import SplayTree from './splaytree';
 import { BSTColors as colors } from './BSTColors';
+import { initGlobalAlgorithmGetter } from './collapseChunkPlugin';
+import {
+  addSplayRotationChunks,
+  getSplayRecursionFrames,
+} from './InsertionSharedCode';
 
 function inOrder(root, keys = []) {
   if (root === null) return keys;
@@ -26,6 +32,41 @@ function createChunker(chunks = []) {
   };
 }
 
+function makeNode(key, left = null, right = null) {
+  return { key, left, right };
+}
+
+function cloneTree(root) {
+  if (root === null) return null;
+  return makeNode(root.key, cloneTree(root.left), cloneTree(root.right));
+}
+
+function flattenTree(root, tree = {}) {
+  if (root === null) return tree;
+
+  tree[root.key] = {};
+  if (root.left !== null) tree[root.key].left = root.left.key;
+  if (root.right !== null) tree[root.key].right = root.right.key;
+  flattenTree(root.left, tree);
+  flattenTree(root.right, tree);
+  return tree;
+}
+
+function renderTree(graph, root) {
+  if (root === null) return;
+
+  graph.addNode(root.key, root.key);
+  if (root.left !== null) {
+    renderTree(graph, root.left);
+    graph.addEdge(root.key, root.left.key);
+  }
+  if (root.right !== null) {
+    renderTree(graph, root.right);
+    graph.addEdge(root.key, root.right.key);
+  }
+  graph.layoutBST(root.key, true);
+}
+
 function getInsertionSnapshots(chunks) {
   return chunks.filter(
     chunk => chunk.bookmark === 'Main'
@@ -44,6 +85,10 @@ function getInsertionBranchChunks(chunks) {
 }
 
 describe('SplayTreeInsertion controller', () => {
+  afterEach(() => {
+    initGlobalAlgorithmGetter(() => null);
+  });
+
   it('handles an empty input without registering animation chunks', () => {
     const chunks = [];
 
@@ -99,7 +144,13 @@ describe('SplayTreeInsertion controller', () => {
       'Main',
       'switchPath',
       'switchPath',
-      'LL-rot1',
+      'right-right',
+      'leftRotate(t2)',
+      't6 = right(t2)',
+      't4 = left(t6)',
+      't6.left = t2',
+      't2.right = t4',
+      'return t6',
       'Main',
       'Main',
     ]);
@@ -221,10 +272,8 @@ describe('SplayTreeInsertion controller', () => {
 
     expect(chunks.some(chunk => chunk.bookmark === 'switchPath')).toBe(true);
     expect(chunks.some(chunk => (
-      chunk.bookmark === 'LE-rot1'
-      || chunk.bookmark === 'LR-rot1'
-      || chunk.bookmark === 'LL-rot1'
-      || chunk.bookmark === 'RE-rot1'
+      chunk.bookmark === 'leftRotate(t2)'
+      || chunk.bookmark === 'rightRotate(t6)'
     ))).toBe(true);
   });
 
@@ -248,6 +297,7 @@ describe('SplayTreeInsertion controller', () => {
 
     const graph = {
       setEdgeColor: jest.fn(),
+      setFunctionInsertText: jest.fn(),
       setFunctionName: jest.fn(),
       setNodeColor: jest.fn(),
     };
@@ -282,6 +332,7 @@ describe('SplayTreeInsertion controller', () => {
       edges: [{ source: 20, target: 40 }],
       addNode: jest.fn(),
       addEdge: jest.fn(),
+      clearTID: jest.fn(),
       removeEdge: jest.fn(),
       directed: jest.fn(),
       layoutBST: jest.fn(),
@@ -315,12 +366,13 @@ describe('SplayTreeInsertion controller', () => {
       [60, colors.NEW_N],
     ]);
     expect(graph.setPauseLayout.mock.calls).toEqual([[true], [false]]);
-    expect(graph.directed).toHaveBeenCalledWith(false);
+    expect(graph.clearTID).toHaveBeenCalled();
+    expect(graph.directed).toHaveBeenCalledWith(true);
     expect(graph.layoutBST).toHaveBeenCalledWith(60, true);
     expect(graph.setFunctionName).toHaveBeenCalledWith('Inserted: 60');
   });
 
-  it('turns a rotation event into a GraphTracer update', () => {
+  it('turns a rotation event into staged GraphTracer updates', () => {
     const chunks = [];
 
     SplayTreeInsertion.run(
@@ -328,36 +380,59 @@ describe('SplayTreeInsertion controller', () => {
       { nodes: [40, 20, 60] },
     );
 
-    const rotationChunk = chunks.find(
-      chunk => chunk.bookmark === 'LL-rot1',
+    const rotationChunks = chunks.filter(
+      chunk => chunk.args
+        && chunk.args[0]
+        && chunk.args[0].type === 'rotation',
     );
 
-    expect(rotationChunk.args).toEqual([{
+    const rotationEvent = {
       type: 'rotation',
       direction: 'left',
       bookmark: 'LL-rot1',
       splayCase: 'RR',
       parentKey: null,
+      depth: 1,
       pivotKey: 20,
       newRootKey: 40,
       transferredSubtreeKey: null,
-    }]);
+    };
+
+    expect(rotationChunks.map(chunk => chunk.bookmark)).toEqual([
+      'right-right',
+      'leftRotate(t2)',
+      't6 = right(t2)',
+      't4 = left(t6)',
+      't6.left = t2',
+      't2.right = t4',
+      'return t6',
+    ]);
+    expect(rotationChunks.slice(0, -1).map(chunk => chunk.args)).toEqual(
+      Array(6).fill([rotationEvent]),
+    );
+    expect(rotationChunks[6].args).toEqual([rotationEvent, 40]);
 
     const graph = {
       nodes: [{ id: 20 }, { id: 40 }],
       edges: [{ source: 20, target: 40 }],
       addEdge: jest.fn(),
+      clearTID: jest.fn(),
       directed: jest.fn(),
       getRoot: jest.fn(() => 40),
       layoutBST: jest.fn(),
       removeEdge: jest.fn(),
       setEdgeColor: jest.fn(),
+      setFunctionInsertText: jest.fn(),
       setFunctionName: jest.fn(),
       setNodeColor: jest.fn(),
       setPauseLayout: jest.fn(),
+      setTagInfo: jest.fn(),
+      updateTID: jest.fn(),
     };
 
-    rotationChunk.callback({ graph }, ...rotationChunk.args);
+    rotationChunks.forEach(chunk => {
+      chunk.callback({ graph }, ...chunk.args);
+    });
 
     expect(graph.removeEdge).toHaveBeenCalledWith(20, 40);
     expect(graph.addEdge).toHaveBeenCalledWith(40, 20);
@@ -369,11 +444,255 @@ describe('SplayTreeInsertion controller', () => {
     ]);
     expect(graph.setEdgeColor.mock.calls).toEqual([
       [20, 40, undefined],
+      [20, 40, colors.ROT_E],
       [40, 20, colors.ROT_E],
     ]);
     expect(graph.setPauseLayout.mock.calls).toEqual([[true], [false]]);
+    expect(graph.clearTID).toHaveBeenCalledTimes(1);
+    expect(graph.directed).toHaveBeenCalledWith(true);
     expect(graph.layoutBST).toHaveBeenCalledWith(40, true);
+    expect(graph.getRoot).not.toHaveBeenCalled();
+    expect(graph.updateTID.mock.calls).toEqual([
+      [20, 't2'],
+      [40, 't6'],
+    ]);
     expect(graph.setFunctionName).toHaveBeenCalledWith('Left rotation: 20');
+    expect(graph.setFunctionInsertText).toHaveBeenLastCalledWith(
+      ' splayCase: Zig (RR)',
+    );
+  });
+
+  it('tracks the rendered root during the 30,10,20 Zig/RL rotation', () => {
+    const chunks = [];
+    const visualisers = SplayTreeInsertion.initVisualisers({ visualiser: {} });
+    const graph = visualisers.graph.instance;
+
+    SplayTreeInsertion.run(
+      createChunker(chunks),
+      { nodes: [30, 10, 20] },
+    );
+
+    const rotationChunks = chunks.filter(
+      chunk => chunk.args
+        && chunk.args[0]
+        && chunk.args[0].type === 'rotation'
+        && chunk.args[0].pivotKey === 10,
+    );
+
+    expect(rotationChunks.map(chunk => chunk.bookmark)).toEqual([
+      'right-left',
+      'leftRotate(t2)',
+      't6 = right(t2)',
+      't4 = left(t6)',
+      't6.left = t2',
+      't2.right = t4',
+      'return t6',
+    ]);
+    expect(rotationChunks.map(chunk => chunk.bookmark)).not.toContain(
+      'LR-rot2',
+    );
+
+    const returnChunkIndex = chunks.indexOf(rotationChunks[6]);
+    chunks.slice(0, returnChunkIndex + 1).forEach(({ callback, args = [] }) => {
+      callback({ graph }, ...args);
+    });
+
+    expect(graph.getRoot()).toBe(30);
+    expect(graph.root).toBe(30);
+    expect(graph.getTree()).toEqual({
+      10: {},
+      30: { left: 10 },
+    });
+  });
+
+  it.each([
+    {
+      name: 'LL',
+      key: 25,
+      caseBookmark: 'left-left',
+      rotationBookmarks: ['rightRotate(t6)', 'rightRotate(t6)'],
+      buildTree: () => makeNode(
+        100,
+        makeNode(
+          50,
+          makeNode(25, null, makeNode(40)),
+          makeNode(75),
+        ),
+      ),
+    },
+    {
+      name: 'LR',
+      key: 75,
+      caseBookmark: 'left-right',
+      rotationBookmarks: ['leftRotate(t2)', 'rightRotate(t6)'],
+      buildTree: () => makeNode(
+        100,
+        makeNode(
+          50,
+          null,
+          makeNode(75, makeNode(60), makeNode(90)),
+        ),
+      ),
+    },
+    {
+      name: 'RR',
+      key: 100,
+      caseBookmark: 'right-right',
+      rotationBookmarks: ['leftRotate(t2)', 'leftRotate(t2)'],
+      buildTree: () => makeNode(
+        25,
+        null,
+        makeNode(
+          75,
+          makeNode(50),
+          makeNode(100, makeNode(90)),
+        ),
+      ),
+    },
+    {
+      name: 'RL',
+      key: 75,
+      caseBookmark: 'right-left',
+      rotationBookmarks: ['rightRotate(t6)', 'leftRotate(t2)'],
+      buildTree: () => makeNode(
+        25,
+        null,
+        makeNode(
+          100,
+          makeNode(75, makeNode(60), makeNode(90)),
+        ),
+      ),
+    },
+  ])(
+    'replays the $name double rotation with non-empty t4 subtrees',
+    ({
+      key,
+      caseBookmark,
+      rotationBookmarks,
+      buildTree,
+    }) => {
+      const initialRoot = buildTree();
+      const algorithmEvents = [];
+      const result = SplayTree.splay(
+        cloneTree(initialRoot),
+        key,
+        event => algorithmEvents.push(event),
+      );
+      const rotationEvents = algorithmEvents.filter(
+        event => event.type === 'rotation',
+      );
+      const chunks = [];
+      const visualisers = SplayTreeInsertion.initVisualisers({ visualiser: {} });
+      const graph = visualisers.graph.instance;
+
+      renderTree(graph, initialRoot);
+      addSplayRotationChunks(
+        createChunker(chunks),
+        algorithmEvents,
+        'search',
+        initialRoot.key,
+      );
+
+      expect(rotationEvents).toHaveLength(2);
+      expect(rotationEvents.every(
+        event => event.transferredSubtreeKey !== null,
+      )).toBe(true);
+      expect(chunks.filter(
+        chunk => chunk.bookmark === caseBookmark,
+      )).toHaveLength(1);
+      expect(chunks.filter(chunk => (
+        chunk.bookmark === 'leftRotate(t2)'
+        || chunk.bookmark === 'rightRotate(t6)'
+      )).map(chunk => chunk.bookmark)).toEqual(rotationBookmarks);
+
+      chunks.forEach(({ callback, args = [] }) => {
+        callback({ graph }, ...args);
+      });
+
+      expect(graph.getRoot()).toBe(result.key);
+      expect(graph.getTree()).toEqual(flattenTree(result));
+      expect(graph.isDirected).toBe(true);
+    },
+  );
+
+  it('shows depth boxes and the Splay case only when recursion is expanded', () => {
+    const expandedAlgorithm = {
+      id: { name: 'splaytree' },
+      collapse: {
+        splaytree: {
+          operations: {
+            insert_splay: true,
+            search_splay: true,
+          },
+        },
+      },
+    };
+    initGlobalAlgorithmGetter(() => expandedAlgorithm);
+
+    const chunks = [];
+    SplayTreeInsertion.run(createChunker(chunks), { nodes: [40, 20, 40] });
+    const traversalChunk = chunks.find(
+      chunk => chunk.bookmark === 'switchPath'
+        && chunk.args[0] === 20
+        && chunk.args[2] === 40,
+    );
+    const graph = {
+      pushRectStack: jest.fn(),
+      rectangle_size: jest.fn(),
+      setEdgeColor: jest.fn(),
+      setFunctionInsertText: jest.fn(),
+      setFunctionName: jest.fn(),
+      setNodeColor: jest.fn(),
+    };
+
+    traversalChunk.callback({ graph }, ...traversalChunk.args);
+
+    expect(graph.pushRectStack).toHaveBeenCalledWith([20, 40], 'Depth 1');
+    expect(graph.rectangle_size).toHaveBeenCalled();
+    expect(graph.setFunctionInsertText).toHaveBeenCalledWith(
+      ' splayCase: Zig (RE)',
+    );
+
+    expandedAlgorithm.collapse.splaytree.operations.insert_splay = false;
+    graph.pushRectStack.mockClear();
+    graph.setFunctionInsertText.mockClear();
+    traversalChunk.callback({ graph }, ...traversalChunk.args);
+
+    expect(graph.pushRectStack).not.toHaveBeenCalled();
+    expect(graph.setFunctionInsertText).not.toHaveBeenCalled();
+  });
+
+  it('describes nested Splay calls two tree levels at a time', () => {
+    const root = {
+      key: 100,
+      left: {
+        key: 50,
+        left: {
+          key: 25,
+          left: { key: 10, left: null, right: null },
+          right: null,
+        },
+        right: null,
+      },
+      right: null,
+    };
+
+    expect(getSplayRecursionFrames(root, 10)).toEqual([
+      {
+        depth: 1,
+        nodeKeys: [100, 50, 25, 10],
+        recursionBlock: null,
+        rootKey: 100,
+        splayCase: 'LL',
+      },
+      {
+        depth: 2,
+        nodeKeys: [25, 10],
+        recursionBlock: 'LL-recurse',
+        rootKey: 25,
+        splayCase: 'LE',
+      },
+    ]);
   });
 
   it('replays traversal, rotation, and snapshot chunks on a real GraphTracer', () => {
@@ -398,6 +717,23 @@ describe('SplayTreeInsertion controller', () => {
     });
     expect(graph.findNode(60).color).toBe(colors.NEW_N);
     expect(graph.functionName).toBe('Inserted: 60');
+    expect(graph.isDirected).toBe(true);
+    expect(graph.nodes.every(node => node.height === undefined)).toBe(true);
+  });
+
+  it('clears temporary rotation roles without removing numeric heights', () => {
+    const visualisers = SplayTreeInsertion.initVisualisers({ visualiser: {} });
+    const graph = visualisers.graph.instance;
+
+    graph.addNode(10, 10);
+    graph.addNode(20, 20);
+    graph.updateHeight(10, 2);
+    graph.updateTID(20, 't2');
+
+    graph.clearTID();
+
+    expect(graph.findNode(10).height).toBe(2);
+    expect(graph.findNode(20).height).toBeUndefined();
   });
 
   it('replays a duplicate insertion without creating a node', () => {
@@ -484,7 +820,11 @@ describe('SplayTreeInsertion controller', () => {
         ],
       });
 
-      const searchChunks = chunks.slice(-6);
+      const firstSearchChunk = chunks.findIndex(
+        chunk => chunk.bookmark === 'switchPath'
+          && chunk.args[2] === 2,
+      );
+      const searchChunks = chunks.slice(firstSearchChunk);
 
       expect(searchChunks.filter(chunk => chunk.bookmark === 'switchPath'))
         .toHaveLength(3);
@@ -492,18 +832,30 @@ describe('SplayTreeInsertion controller', () => {
         'switchPath',
         'switchPath',
         'switchPath',
-        'LL-rot1',
-        'LL-rot2',
-        'Main',
+        'left-left',
+        'rightRotate(t6)',
+        't2 = left(t6)',
+        't4 = right(t2)',
+        't2.right = t6',
+        't6.left = t4',
+        'return t2',
+        'rightRotate(t6)',
+        't2 = left(t6)',
+        't4 = right(t2)',
+        't2.right = t6',
+        't6.left = t4',
+        'return t2',
+        '1',
       ]);
-      expect(searchChunks[5].args[2]).toBe(2);
-      expect(searchChunks[5].args[0]).toEqual([2, 10, 34]);
-      expect(searchChunks[5].args[1]).toEqual([
+      const finalSearchChunk = searchChunks[searchChunks.length - 1];
+      expect(finalSearchChunk.args[2]).toBe(2);
+      expect(finalSearchChunk.args[0]).toEqual([2, 10, 34]);
+      expect(finalSearchChunk.args[1]).toEqual([
         [2, 10],
         [10, 34],
       ]);
-      expect(searchChunks[5].args[3]).toBe(2);
-      expect(searchChunks[5].args[4]).toBe(true);
+      expect(finalSearchChunk.args[3]).toBe(2);
+      expect(finalSearchChunk.args[4]).toBe(true);
     });
 
     it('inserts into the tree produced by the preceding search', () => {
