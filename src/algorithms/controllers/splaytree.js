@@ -274,6 +274,27 @@ class SplayTree {
 
     return newRoot;
   }
+
+  /**
+   * Delete key from the tree and return the resulting root.
+   * If key is absent, splay still moves the closest accessed node to the
+   * root. When key is present, the maximum node in its left subtree becomes
+   * the new root before the original right subtree is reattached.
+   */
+  static delete(root, key, onEvent = null) {
+    if (root === null) return root;
+
+    const splayedRoot = SplayTree.splay(root, key, onEvent);
+
+    if (splayedRoot.key !== key) return splayedRoot;
+    if (splayedRoot.left === null) return splayedRoot.right;
+
+    const rightSubtree = splayedRoot.right;
+    const newRoot = SplayTree.splay(splayedRoot.left, key, onEvent);
+    newRoot.right = rightSubtree;
+
+    return newRoot;
+  }
 }
 
 export default SplayTree;

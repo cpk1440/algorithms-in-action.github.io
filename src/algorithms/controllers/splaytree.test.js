@@ -173,6 +173,55 @@ describe('SplayTree.insert', () => {
   });
 });
 
+describe('SplayTree.delete', () => {
+  it('returns null when deleting from an empty tree', () => {
+    expect(SplayTree.delete(null, 10)).toBeNull();
+  });
+
+  it('keeps every key when the target is absent', () => {
+    const root = new Node(40);
+    root.left = new Node(20);
+    root.right = new Node(60);
+
+    const result = SplayTree.delete(root, 50);
+
+    expect(result.key).toBe(60);
+    expect(inOrder(result)).toEqual([20, 40, 60]);
+  });
+
+  it('returns the right subtree when the deleted root has no left child', () => {
+    const root = new Node(10);
+    root.right = new Node(20);
+
+    const result = SplayTree.delete(root, 10);
+
+    expect(result).toEqual({
+      key: 20,
+      left: null,
+      right: null,
+    });
+  });
+
+  it('replaces a deleted root with the maximum of its left subtree', () => {
+    const root = new Node(50);
+    root.left = new Node(30);
+    root.left.left = new Node(20);
+    root.left.right = new Node(40);
+    root.right = new Node(70);
+    const events = [];
+
+    const result = SplayTree.delete(
+      root,
+      50,
+      event => events.push(event),
+    );
+
+    expect(result.key).toBe(40);
+    expect(inOrder(result)).toEqual([20, 30, 40, 70]);
+    expect(events.map(event => event.direction)).toEqual(['left']);
+  });
+});
+
 describe('SplayTree rotation events', () => {
   it('reports single right and left rotations with existing bookmarks', () => {
     const rightRoot = new Node(100);
