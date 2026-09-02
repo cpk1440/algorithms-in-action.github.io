@@ -20,7 +20,8 @@ import {
   genUniqueRandSearchList,
   genUniqueRandNumList,
   balanceBSTArray,
-  shuffleArray
+  shuffleArray,
+  sortAndInterleaveSearches
 } from './helpers/InputBuilders';
 
 import { errorParamMsg } from './helpers/ParamMsg';
@@ -38,13 +39,12 @@ const OPERATIONS = 'operations';
 //const INSERTION = 'insertion';
 //const SEARCH = 'search';
 
-/** NOTE: Sorted and balanced functionality temprorarily removed 
- * until clarification is received on how to handle balanced and sorted 
- * with new symbol list input.
+/** NOTE: Balanced functionality temporarily removed until clarification is
+ * received on how to handle it with the new symbol list input.
  */
 const UNCHECKED = {
   random: false,
-  //sorted: false,
+  sorted: false,
   //balanced: false,
 };
 
@@ -81,9 +81,9 @@ function SplayTreeParam({list}) {
       case 'random':
         setlocalNodes(shuffleArray(localNodes));
         break;
-      //case 'sorted':
-        //setlocalNodes([...localNodes].sort((a, b) => a - b));
-        //break;
+      case 'sorted':
+        setlocalNodes(sortAndInterleaveSearches(localNodes));
+        break;
       //case 'balanced':
         //setlocalNodes(balanceBSTArray([...localNodes].sort((a, b) => a - b)));
         //break;
@@ -133,6 +133,17 @@ function SplayTreeParam({list}) {
           />
         )}
         label="Random"
+        className="checkbox"
+      />
+      <FormControlLabel
+        control={(
+          <BlueRadio
+            checked={bstCase.sorted}
+            onChange={handleChange}
+            name="sorted"
+          />
+        )}
+        label="Sorted"
         className="checkbox"
       />
       

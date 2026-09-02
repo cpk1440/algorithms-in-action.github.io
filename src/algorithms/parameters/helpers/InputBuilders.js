@@ -52,10 +52,11 @@ export const genUniqueRandSearchList = (num, min, max) => {
     //gets a random index from list and its key
     const index = Math.floor(Math.random() * set.length);
     const randKey = set[index];
+    const currIndex = result.indexOf(randKey);
 
     /*makes random index to splice into guaranteed to be after original value
       so search is guaranteed to be successful*/
-    const searchIndex = Math.floor(Math.random() * (set.length - index)) + (index+1);
+    const searchIndex = Math.floor(Math.random() * (result.length - currIndex)) + (currIndex + 1);
     result.splice(searchIndex, 0, `?${randKey}`);
   }
 
@@ -66,13 +67,50 @@ export const genUniqueRandSearchList = (num, min, max) => {
   const failIndex = Math.floor(Math.random() * set.length);
   const randFailKey = set[failIndex];
   const currIndex = result.indexOf(randFailKey);
-  const searchFailIndex = Math.floor(Math.random() * (set.length )) - (currIndex+1);
+  const searchFailIndex = Math.floor(Math.random() * (currIndex + 1));
 
   result.splice(searchFailIndex, 0, `?${randFailKey}`);
 
   //return modfied list with added search queries
   return result;
-}
+};
+
+/**
+ * Sort insert operations numerically, then randomly merge search operations
+ * back into the list without changing the searches' relative order.
+ */
+export const sortAndInterleaveSearches = (operations) => {
+  const operationList = Array.isArray(operations)
+    ? operations
+    : operations.split(',');
+  const insertions = operationList
+    .filter((operation) => !String(operation).startsWith('?'))
+    .sort((a, b) => Number(a) - Number(b));
+  const searches = operationList
+    .filter((operation) => String(operation).startsWith('?'));
+  const result = [];
+  let insertionIndex = 0;
+  let searchIndex = 0;
+
+  while (insertionIndex < insertions.length && searchIndex < searches.length) {
+    const insertionsRemaining = insertions.length - insertionIndex;
+    const searchesRemaining = searches.length - searchIndex;
+    const chooseInsertion = Math.random()
+      < insertionsRemaining / (insertionsRemaining + searchesRemaining);
+
+    if (chooseInsertion) {
+      result.push(insertions[insertionIndex]);
+      insertionIndex += 1;
+    } else {
+      result.push(searches[searchIndex]);
+      searchIndex += 1;
+    }
+  }
+
+  return result
+    .concat(insertions.slice(insertionIndex))
+    .concat(searches.slice(searchIndex));
+};
 
 export const quicksortPerfectPivotArray = (minA, maxA) => {
   function idealOrder(min, max, v, step) {
