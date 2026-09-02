@@ -17,6 +17,7 @@ import '../../styles/Param.scss';
 
 import { singleNumberValidCheck } from './helpers/InputValidators';
 import { 
+  genUniqueRandSearchList,
   genUniqueRandNumList,
   balanceBSTArray,
   shuffleArray
@@ -30,7 +31,7 @@ import { withAlgorithmParams } from './helpers/urlHelpers';
 import { ERRORS, EXAMPLES } from './helpers/ErrorExampleStrings';
 import SymbolListParam from './helpers/SymbolListParam';
 
-const DEFAULT_NODES = genUniqueRandNumList(12, 1, 100);
+const DEFAULT_NODES = genUniqueRandSearchList(12, 1, 100);
 //const DEFAULT_TARGET = '2';
 
 const OPERATIONS = 'operations';
@@ -115,7 +116,7 @@ function SplayTreeParam({list}) {
           DEFAULT_VAL = {localNodes}
           SET_VAL = {setlocalNodes}
 
-          REFRESH_FUNCTION = {() => genUniqueRandNumList(12, 1, 100)}
+          REFRESH_FUNCTION = {() => genUniqueRandSearchList(12, 1, 100)}
 
           ALGORITHM_NAME = {OPERATIONS}
 

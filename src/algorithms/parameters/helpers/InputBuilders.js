@@ -37,6 +37,43 @@ export const genUniqueRandNumList = (num, min, max) => {
   return Array.from(set);
 };
 
+//generates unique lists and adds 2 successful searches and 1 unsuccessful search
+export const genUniqueRandSearchList = (num, min, max) => {
+  const NUMSUCCESSFULSEARCH = 2;
+
+  /*make random unique set and copy it, searches only added to result,
+    set holds only input nums to prevent a search to be selected by random
+    instead of a value*/
+  const set = genUniqueRandNumList(num,min,max);
+  const result = [...set];
+
+  //iterates twice for 2 successful searches
+  for (let i = 0; i < NUMSUCCESSFULSEARCH; i+=1){
+    //gets a random index from list and its key
+    const index = Math.floor(Math.random() * set.length);
+    const randKey = set[index];
+
+    /*makes random index to splice into guaranteed to be after original value
+      so search is guaranteed to be successful*/
+    const searchIndex = Math.floor(Math.random() * (set.length - index)) + (index+1);
+    result.splice(searchIndex, 0, `?${randKey}`);
+  }
+
+  /*gets a random index and its key like successful searches but inserts
+    before original value, and since list is unique, is guaranteed to be unsuccessful
+    search*/
+
+  const failIndex = Math.floor(Math.random() * set.length);
+  const randFailKey = set[failIndex];
+  const currIndex = result.indexOf(randFailKey);
+  const searchFailIndex = Math.floor(Math.random() * (set.length )) - (currIndex+1);
+
+  result.splice(searchFailIndex, 0, `?${randFailKey}`);
+
+  //return modfied list with added search queries
+  return result;
+}
+
 export const quicksortPerfectPivotArray = (minA, maxA) => {
   function idealOrder(min, max, v, step) {
     if (max <= min) {
