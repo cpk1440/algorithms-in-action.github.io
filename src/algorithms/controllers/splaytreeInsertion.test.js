@@ -662,6 +662,62 @@ describe('SplayTreeInsertion controller', () => {
     expect(graph.setFunctionInsertText).not.toHaveBeenCalled();
   });
 
+  it('shows depth boxes for Splay search when search recursion is expanded', () => {
+    const expandedAlgorithm = {
+      id: { name: 'splaytree' },
+      collapse: {
+        splaytree: {
+          operations: {
+            insert_splay: false,
+            search_splay: true,
+          },
+        },
+      },
+    };
+    initGlobalAlgorithmGetter(() => expandedAlgorithm);
+
+    const chunks = [];
+    SplayTreeInsertion.run(
+      createChunker(chunks),
+      {
+        operations: [
+          { type: 'insert', value: 40 },
+          { type: 'insert', value: 20 },
+          { type: 'search', value: 40 },
+        ],
+      },
+    );
+    const traversalChunk = chunks.find(
+      chunk => chunk.bookmark === 'switchPath'
+        && chunk.args[0] === 20
+        && chunk.args[2] === 40,
+    );
+    const graph = {
+      pushRectStack: jest.fn(),
+      rectangle_size: jest.fn(),
+      setEdgeColor: jest.fn(),
+      setFunctionInsertText: jest.fn(),
+      setFunctionName: jest.fn(),
+      setNodeColor: jest.fn(),
+    };
+
+    traversalChunk.callback({ graph }, ...traversalChunk.args);
+
+    expect(graph.pushRectStack).toHaveBeenCalledWith([20, 40], 'Depth 1');
+    expect(graph.rectangle_size).toHaveBeenCalled();
+    expect(graph.setFunctionInsertText).toHaveBeenCalledWith(
+      ' splayCase: Zig (RE)',
+    );
+
+    expandedAlgorithm.collapse.splaytree.operations.search_splay = false;
+    graph.pushRectStack.mockClear();
+    graph.setFunctionInsertText.mockClear();
+    traversalChunk.callback({ graph }, ...traversalChunk.args);
+
+    expect(graph.pushRectStack).not.toHaveBeenCalled();
+    expect(graph.setFunctionInsertText).not.toHaveBeenCalled();
+  });
+
   it('describes nested Splay calls two tree levels at a time', () => {
     const root = {
       key: 100,
