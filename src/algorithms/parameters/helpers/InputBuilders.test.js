@@ -69,3 +69,49 @@ describe('sortAndInterleaveSearches', () => {
       .toEqual(['1', '4', '?4']);
   });
 });
+
+
+describe('balancedAndInterleaveSearches', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('balances inserts while preserving search order and the original input', () => {
+    const operations = ['10', '?10', '-2', '3', '?99'];
+    const originalOperations = [...operations];
+
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const result = balancedAndInterleaveSearches(operations);
+
+    expect(result.filter(
+      (operation) => !String(operation).startsWith('?')
+    )).toEqual(['3', '-2', '10']);
+
+    expect(result.filter(
+      (operation) => String(operation).startsWith('?')
+    )).toEqual(['?10', '?99']);
+
+    expect(operations).toEqual(originalOperations);
+  });
+
+  test('allows searches before the first insert and after the last insert', () => {
+    jest.spyOn(Math, 'random')
+      .mockReturnValueOnce(0.9)
+      .mockReturnValue(0);
+
+    const result = balancedAndInterleaveSearches([
+      3, '?3', 1, '?9', 2,
+    ]);
+
+    expect(result).toEqual(['?3', 2, 1, 3, '?9']);
+  });
+
+  test('accepts a comma-separated operation string', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    expect(
+      balancedAndInterleaveSearches('4,?4,1')
+    ).toEqual(['1', '4', '?4']);
+  });
+});
