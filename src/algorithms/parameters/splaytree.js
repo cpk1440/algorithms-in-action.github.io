@@ -21,7 +21,8 @@ import {
   genUniqueRandNumList,
   balanceBSTArray,
   shuffleArray,
-  sortAndInterleaveSearches
+  sortAndInterleaveSearches,
+  balancedAndInterleaveSearches
 } from './helpers/InputBuilders';
 
 import { errorParamMsg } from './helpers/ParamMsg';
@@ -84,9 +85,9 @@ function SplayTreeParam({list}) {
       case 'sorted':
         setlocalNodes(sortAndInterleaveSearches(localNodes));
         break;
-      //case 'balanced':
-        //setlocalNodes(balanceBSTArray([...localNodes].sort((a, b) => a - b)));
-        //break;
+      case 'balanced':
+        setlocalNodes(balancedAndInterleaveSearches(localNodes));
+        break;
       default:
     }
 
@@ -144,6 +145,17 @@ function SplayTreeParam({list}) {
           />
         )}
         label="Sorted"
+        className="checkbox"
+      />
+      <FormControlLabel
+        control={(
+          <BlueRadio
+            checked={bstCase.balanced}
+            onChange={handleChange}
+            name="balanced"
+          />
+        )}
+        label="Balanced"
         className="checkbox"
       />
       

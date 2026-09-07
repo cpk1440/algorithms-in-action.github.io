@@ -112,6 +112,35 @@ export const sortAndInterleaveSearches = (operations) => {
     .concat(searches.slice(searchIndex));
 };
 
+export const balancedAndInterleaveSearches = (operations) => { 
+  const operationList = Array.isArray(operations) ? operations : operations.split(',');
+
+  // Balance insertions values only
+  const insertions = operationList.filter((operation) => !String(operation).startsWith('?')).map(Number).sort((a, b) => a - b);
+  // Filter out search values 
+  const searches = operationList.filter((operation) => String(operation).startsWith('?'))
+
+  const balancedInserts = balanceBSTArray(insertions); 
+  const res = [];
+
+  let insertIdx = 0;
+  let searchIdx = 0;
+
+  while( insertIdx < balancedInserts.length || searchIdx < searches.length){
+    if(insertIdx < balancedInserts.length){
+      res.push(balancedInserts[insertIdx]);
+      insertIdx += 1;
+    }
+    
+    if(searchIdx < searches.length){
+      res.push(searches[searchIdx]);
+      searchIdx += 1;
+    }
+  }
+
+  return res;
+}
+
 export const quicksortPerfectPivotArray = (minA, maxA) => {
   function idealOrder(min, max, v, step) {
     if (max <= min) {
