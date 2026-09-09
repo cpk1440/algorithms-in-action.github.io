@@ -34,6 +34,7 @@
 import GraphTracer from '../../components/DataStructures/Graph/GraphTracer';
 import Array1DTracer from '../../components/DataStructures/Array/Array1DTracer';
 import { areExpanded } from './collapseChunkPlugin';
+import SplayTree from './splaytree';
 
 // Moving to new color scheme
 // XXX Currently code is a bit shit  due to previous use of older color
@@ -63,7 +64,6 @@ function isRecursionExpanded() {
 
 let globalRoot;
 let isAVL = false; // flag for AVLT/BST (needed for height)
-let isSplay = false; // flag for AVLT/BST (needed for height)
 // Tree Node class
 class TreeNode {
 	constructor(key) {
@@ -1103,20 +1103,539 @@ function insertOrSearch(chunker, root, key, currIndex) {
     return r;
 } 
 
+// Create a snapshot of the splay tree for transitioning between
+// states in the visualisation. This function collects the keys of all nodes and
+// the edges between them, as well as the key of the root node.
+function createSplaySnapshot(root) {
+    const nodeKeys = [];
+    const edges = [];
 
-// XXX hacked to support splay trees (isSplay = true) - re-think
-// interface - arg currently true/false/'splay' which isn't great
+    function visit(node) {
+        if (node === null) return;
+
+        nodeKeys.push(node.key);
+
+        if (node.left !== null) {
+            edges.push([node.key, node.left.key]);
+        }
+
+        if (node.right !== null) {
+            edges.push([node.key, node.right.key]);
+        }
+
+        visit(node.left);
+        visit(node.right);
+    }
+    visit(root);
+
+    return {
+        nodeKeys,
+        edges,
+        rootKey: root.key,
+    };
+}
+
+// Get the path from the root to a specific key in the splay tree
+// This function traverses the tree and
+// records the keys of the nodes along the path to the target key.
+export function getSplayTreePath(root, key) {
+    const path = [];
+    let current = root;
+
+    while (current !== null) {
+        path.push(current.key);
+        if (key === current.key) {
+            break;
+        }
+        current = key < current.key ? current.left : current.right;
+    }
+    return path;
+}
+
+// Describe the recursive Splay calls before the pure algorithm mutates the
+// tree. Splay recursion advances by two BST levels at a time, so these frames
+// are different from the ordinary one-node-at-a-time traversal path.
+export function getSplayRecursionFrames(root, key) {
+    const frames = [];
+    let current = root;
+    let depth = 1;
+    let recursionBlock = null;
+
+    function subtreeKeys(node, keys = []) {
+        if (node === null) return keys;
+        keys.push(node.key);
+        subtreeKeys(node.left, keys);
+        subtreeKeys(node.right, keys);
+        return keys;
+    }
+
+    while (current !== null) {
+        let splayCase = 'E';
+        let nextRoot = null;
+        let nextRecursionBlock = null;
+
+        if (key < current.key && current.left !== null) {
+            if (key < current.left.key) {
+                splayCase = 'LL';
+                nextRoot = current.left.left;
+                nextRecursionBlock = 'LL-recurse';
+            } else if (key > current.left.key) {
+                splayCase = 'LR';
+                nextRoot = current.left.right;
+                nextRecursionBlock = 'LR-recurse';
+            } else {
+                splayCase = 'LE';
+            }
+        } else if (key > current.key && current.right !== null) {
+            if (key > current.right.key) {
+                splayCase = 'RR';
+                nextRoot = current.right.right;
+                nextRecursionBlock = 'RR-recurse';
+            } else if (key < current.right.key) {
+                splayCase = 'RL';
+                nextRoot = current.right.left;
+                nextRecursionBlock = 'RL-recurse';
+            } else {
+                splayCase = 'RE';
+            }
+        }
+
+        frames.push({
+            depth,
+            nodeKeys: subtreeKeys(current),
+            recursionBlock,
+            rootKey: current.key,
+            splayCase,
+        });
+
+        if (nextRoot === null) break;
+        current = nextRoot;
+        depth += 1;
+        recursionBlock = nextRecursionBlock;
+    }
+
+    return frames;
+}
+
+function isSplayDepthExpanded(operationType, recursionBlock = null) {
+    const operationBlock = operationType === 'search'
+        ? 'search_splay'
+        : 'insert_splay';
+
+    if (!areExpanded([operationBlock], 'operations')) return false;
+    return recursionBlock === null
+        || areExpanded([recursionBlock], 'operations');
+}
+
+function getSplayCaseLabel(splayCase, rotationCount) {
+    if (rotationCount <= 0) return 'No rotation';
+    if (rotationCount === 1 || splayCase === 'LE' || splayCase === 'RE') {
+        return `Zig (${splayCase})`;
+    }
+    if (splayCase === 'LL' || splayCase === 'RR') {
+        return `Zig-Zig (${splayCase})`;
+    }
+    return `Zig-Zag (${splayCase})`;
+}
+
+function addSplayDepthBox(graph, frame, operationType, rotationCount) {
+    if (!frame || !isSplayDepthExpanded(
+        operationType,
+        frame.recursionBlock,
+    )) return;
+
+    graph.pushRectStack(frame.nodeKeys, `Depth ${frame.depth}`);
+    graph.rectangle_size();
+    graph.setFunctionInsertText(
+        ` splayCase: ${getSplayCaseLabel(frame.splayCase, rotationCount)}`,
+    );
+}
+
+function countSplayRotationsByDepth(events) {
+    return events.reduce((counts, event) => {
+        if (event.type !== 'rotation') return counts;
+        counts[event.depth] = (counts[event.depth] || 0) + 1;
+        return counts;
+    }, {});
+}
+
+function getSplayCaseBookmark(splayCase) {
+    return {
+        LL: 'left-left',
+        LR: 'left-right',
+        RR: 'right-right',
+        RL: 'right-left',
+        LE: 'left-empty',
+        RE: 'right-empty',
+    }[splayCase] || 'case-empty';
+}
+
+function getSplayRotationBookmarks(direction) {
+    return direction === 'right'
+        ? {
+            enter: 'rightRotate(t6)',
+            identifyNewRoot: 't2 = left(t6)',
+            identifyTransfer: 't4 = right(t2)',
+            linkPivot: 't2.right = t6',
+            linkTransfer: 't6.left = t4',
+            returnRoot: 'return t2',
+        }
+        : {
+            enter: 'leftRotate(t2)',
+            identifyNewRoot: 't6 = right(t2)',
+            identifyTransfer: 't4 = left(t6)',
+            linkPivot: 't6.left = t2',
+            linkTransfer: 't2.right = t4',
+            returnRoot: 'return t6',
+        };
+}
+
+// Register the visual stages for one rotation reported by the pure Splay
+// Tree. The algorithm event contains only node keys; this helper translates
+// them into the same t2/t4/t6 pointer operations used by the AVL animation.
+export function addSplayRotationChunk(
+    chunker,
+    event,
+    operationType = 'insert',
+    rotationCount = 1,
+    renderedRootKey = null,
+    includeCaseStep = true,
+) {
+    const bookmarks = getSplayRotationBookmarks(event.direction);
+    const rotationName = `${event.direction === 'right' ? 'Right' : 'Left'} rotation: ${event.pivotKey}`;
+    const caseLabel = getSplayCaseLabel(event.splayCase, rotationCount);
+
+    if (includeCaseStep) {
+        chunker.add(
+            getSplayCaseBookmark(event.splayCase),
+            (vis, rotation) => {
+                const graph = vis.graph;
+
+                // When recursive Splay calls return, discard boxes belonging
+                // to deeper calls before animating the current rotation.
+                while (
+                    graph.rectangles
+                    && graph.rectangles.length > rotation.depth
+                ) {
+                    graph.popRectStack();
+                }
+
+                graph.setFunctionName(
+                    `${caseLabel}: rotate ${rotation.pivotKey}`,
+                );
+                if (graph.setFunctionInsertText) {
+                    graph.setFunctionInsertText(` splayCase: ${caseLabel}`);
+                }
+            },
+            [event],
+            event.depth,
+        );
+    }
+
+    chunker.add(
+        bookmarks.enter,
+        (vis, rotation) => {
+            const graph = vis.graph;
+
+            graph.setPauseLayout(true);
+            if (graph.clearTID) graph.clearTID();
+
+            // Remove traversal or previous-rotation colours before showing
+            // the current rotation.
+            graph.nodes.forEach(({ id }) => {
+                graph.setNodeColor(id, undefined);
+            });
+            graph.edges.forEach(({ source, target }) => {
+                graph.setEdgeColor(source, target, undefined);
+            });
+
+            if (graph.updateTID) {
+                graph.updateTID(
+                    rotation.pivotKey,
+                    rotation.direction === 'right' ? 't6' : 't2',
+                );
+            }
+            graph.setNodeColor(rotation.pivotKey, colors.ROT_N);
+            graph.setFunctionName(rotationName);
+            if (graph.setFunctionInsertText) {
+                graph.setFunctionInsertText(` splayCase: ${caseLabel}`);
+            }
+        },
+        [event],
+        event.depth,
+    );
+
+    chunker.add(
+        bookmarks.identifyNewRoot,
+        (vis, rotation) => {
+            const graph = vis.graph;
+
+            if (graph.updateTID) {
+                graph.updateTID(
+                    rotation.newRootKey,
+                    rotation.direction === 'right' ? 't2' : 't6',
+                );
+            }
+            graph.setNodeColor(rotation.newRootKey, colors.ROT_N);
+            graph.setEdgeColor(
+                rotation.pivotKey,
+                rotation.newRootKey,
+                colors.ROT_E,
+            );
+        },
+        [event],
+        event.depth,
+    );
+
+    chunker.add(
+        bookmarks.identifyTransfer,
+        (vis, rotation) => {
+            const graph = vis.graph;
+
+            if (rotation.transferredSubtreeKey !== null) {
+                if (graph.updateTID) {
+                    graph.updateTID(rotation.transferredSubtreeKey, 't4');
+                }
+                graph.setNodeColor(
+                    rotation.transferredSubtreeKey,
+                    colors.ROT_N,
+                );
+            } else if (graph.setTagInfo) {
+                graph.setTagInfo('t4 ');
+            }
+        },
+        [event],
+        event.depth,
+    );
+
+    chunker.add(
+        bookmarks.linkPivot,
+        (vis, rotation) => {
+            const graph = vis.graph;
+            const {
+                pivotKey,
+                newRootKey,
+                transferredSubtreeKey,
+            } = rotation;
+
+            graph.removeEdge(pivotKey, newRootKey);
+            if (transferredSubtreeKey !== null) {
+                graph.removeEdge(newRootKey, transferredSubtreeKey);
+            }
+            graph.addEdge(newRootKey, pivotKey);
+            graph.setEdgeColor(newRootKey, pivotKey, colors.ROT_E);
+        },
+        [event],
+        event.depth,
+    );
+
+    chunker.add(
+        bookmarks.linkTransfer,
+        (vis, rotation) => {
+            if (rotation.transferredSubtreeKey !== null) {
+                vis.graph.addEdge(
+                    rotation.pivotKey,
+                    rotation.transferredSubtreeKey,
+                );
+                vis.graph.setEdgeColor(
+                    rotation.pivotKey,
+                    rotation.transferredSubtreeKey,
+                    colors.ROT_E,
+                );
+            }
+        },
+        [event],
+        event.depth,
+    );
+
+    chunker.add(
+        bookmarks.returnRoot,
+        (vis, rotation, explicitRootKey) => {
+            const graph = vis.graph;
+
+            // The caller receives the new subtree root at this point. Update
+            // its parent edge only now, matching the rotation pseudocode.
+            if (rotation.parentKey !== null) {
+                graph.removeEdge(rotation.parentKey, rotation.pivotKey);
+                graph.addEdge(rotation.parentKey, rotation.newRootKey);
+            }
+
+            if (graph.setTagInfo) graph.setTagInfo('');
+            graph.directed(true);
+            graph.setPauseLayout(false);
+            graph.layoutBST(
+                explicitRootKey === null ? graph.getRoot() : explicitRootKey,
+                true,
+            );
+            if (graph.rectangle_size) graph.rectangle_size();
+            graph.setFunctionName(
+                isSplayDepthExpanded(operationType)
+                    ? `${caseLabel} — ${rotationName}`
+                    : rotationName,
+            );
+            if (graph.setFunctionInsertText) {
+                graph.setFunctionInsertText(` splayCase: ${caseLabel}`);
+            }
+        },
+        [event, renderedRootKey],
+        event.depth,
+    );
+}
+
+// Register all primitive rotations for one Splay operation. A Zig-Zig or
+// Zig-Zag case selects its case once, then reuses two left/right primitives.
+// The rendered global root is advanced after each root-level rotation.
+export function addSplayRotationChunks(
+    chunker,
+    events,
+    operationType = 'insert',
+    initialRenderedRootKey = null,
+) {
+    const rotationEvents = events.filter(event => event.type === 'rotation');
+    const rotationsByDepth = countSplayRotationsByDepth(rotationEvents);
+    const shownCaseDepths = new Set();
+    let renderedRootKey = initialRenderedRootKey;
+
+    rotationEvents.forEach(event => {
+        if (event.parentKey === null) {
+            renderedRootKey = event.newRootKey;
+        }
+
+        const includeCaseStep = !shownCaseDepths.has(event.depth);
+        shownCaseDepths.add(event.depth);
+        addSplayRotationChunk(
+            chunker,
+            event,
+            operationType,
+            rotationsByDepth[event.depth],
+            renderedRootKey,
+            includeCaseStep,
+        );
+    });
+
+    return renderedRootKey;
+}
+
+function getSplayInsertionMessage(event) {
+    switch (event.action) {
+        case 'empty-tree':
+            return `Insert ${event.key} into the empty tree`;
+        case 'insert-left':
+            return `Insert ${event.key} above and left of ${event.rootKey}`;
+        case 'insert-right':
+            return `Insert ${event.key} above and right of ${event.rootKey}`;
+        case 'duplicate':
+            return `Duplicate ignored: ${event.key}`;
+        default:
+            return `Insert: ${event.key}`;
+    }
+}
+
+// Show the insertion decision after splaying and before the completed-tree
+// snapshot is displayed. Main is used because the referenced insert_left and
+// insert_right code blocks do not define their own pseudocode bookmarks.
+function addSplayInsertionBranchChunk(chunker, event) {
+    chunker.add(
+        event.bookmark,
+        (vis, insertion) => {
+            const graph = vis.graph;
+            if (graph.clearTID) graph.clearTID();
+
+            graph.nodes.forEach(({ id }) => {
+                graph.setNodeColor(id, undefined);
+            });
+            graph.edges.forEach(({ source, target }) => {
+                graph.setEdgeColor(source, target, undefined);
+            });
+
+            if (insertion.rootKey !== null) {
+                const rootColor = insertion.action === 'duplicate'
+                    ? colors.FOUND_N
+                    : colors.PATH_N;
+                graph.setNodeColor(insertion.rootKey, rootColor);
+            }
+
+            graph.setFunctionName(getSplayInsertionMessage(insertion));
+            graph.setFunctionInsertText();
+        },
+        [event],
+        1,
+    );
+}
+
+function addSplaySearchSnapshotChunk(chunker, root, target) {
+    if (root === null) {
+        chunker.add(
+            '1',
+            (vis, searchedKey) => {
+                if (vis.graph.clearRectangles) vis.graph.clearRectangles();
+                if (vis.graph.clearTID) vis.graph.clearTID();
+                vis.graph.setFunctionName(`Search failed: ${searchedKey}`);
+                vis.graph.setFunctionInsertText();
+            },
+            [target],
+            1,
+        );
+        return;
+    }
+
+    const {
+        nodeKeys,
+        edges,
+        rootKey,
+    } = createSplaySnapshot(root);
+    const found = rootKey === target;
+
+    chunker.add(
+        '1',
+        (vis, keys, treeEdges, snapshotRoot, searchedKey, isFound) => {
+            const graph = vis.graph;
+            if (graph.clearRectangles) graph.clearRectangles();
+            if (graph.clearTID) graph.clearTID();
+
+            graph.setPauseLayout(true);
+            [...graph.edges].forEach(({ source, target: child }) => {
+                graph.removeEdge(source, child);
+            });
+            keys.forEach(nodeKey => {
+                graph.addNode(nodeKey, nodeKey);
+                graph.setNodeColor(nodeKey, undefined);
+            });
+            treeEdges.forEach(([parent, child]) => {
+                graph.addEdge(parent, child);
+            });
+
+            graph.directed(true);
+            graph.setPauseLayout(false);
+            graph.layoutBST(snapshotRoot, true);
+            graph.setNodeColor(
+                searchedKey,
+                isFound ? colors.FOUND_N : colors.PATH_N,
+            );
+            graph.setFunctionName(
+                isFound ? `Found: ${searchedKey}` : `Search failed: ${searchedKey}`,
+            );
+            graph.setFunctionInsertText();
+        },
+        [nodeKeys, edges, rootKey, target, found],
+        1,
+    );
+}
+
+
+// XXX interface currently uses true/false/'splay' to select a tree type;
+// consider replacing it with named options in a future refactor.
 // default is recursive BST insertion 
 // If isAVL = true we have recursive AVLT insertion
 // If isInsert = true 
 export function createTreeInsertionController(isAVLp = false) {
+    const isSplayController = (isAVLp === 'splay');
     // const treeType = isAVL ? 'AVL' : 'BST'; // no longer used
     // const functionPrefix = isAVL ? 'AVLT' : 'BST';
     return {
         // visualiser used only for insert
         initVisualisers({ visualiser }) {
             isAVL = (isAVLp === true);
-            isSplay = (isAVLp === 'splay');
             return {
                 graph: {
                     // XXX specialise "Tree" label???
@@ -1133,14 +1652,36 @@ export function createTreeInsertionController(isAVLp = false) {
         * @param {array} nodes array of numbers needs to be inserted
         */
         // nodes used for insert; visualiser and target used for search
-        run(chunker, { nodes, visualiser, target }) {
+        run(chunker, {
+            nodes = [],
+            operations,
+            visualiser,
+            target,
+        }) {
             isInsert = true;
-            if (nodes.length === 0) return;
+            const operationList = isSplayController
+                ? (
+                    Array.isArray(operations)
+                        ? operations
+                        : nodes.map(value => ({
+                            type: 'insert',
+                            value,
+                        }))
+                )
+                : nodes;
+
+            if (operationList.length === 0) return;
 
             // initial settings for the visualisation
             chunker.add(
                 'Main',
                 (vis) => {
+                    if (isSplayController && vis.graph.clearRectangles) {
+                        vis.graph.clearRectangles();
+                    }
+                    if (isSplayController && vis.graph.clearTID) {
+                        vis.graph.clearTID();
+                    }
                     vis.graph.isWeighted = isAVL;
                     vis.graph.setFunctionName('Tree is Empty');
                     vis.graph.setPauseLayout(false);
@@ -1151,9 +1692,213 @@ export function createTreeInsertionController(isAVLp = false) {
                 [],
                 1
             );
-            // We need at least one bookmark; splay trees NYI so we just
-            // return here but it allows pseudocode to be displayed
-            if (isSplay) return;
+            // Splay insertion stays in the pure data structure. Visual updates
+            // are connected incrementally after the algorithm call is verified.
+            if (isSplayController) {
+                let root = null;
+
+                operationList.forEach(operation => {
+                    const { type, value: key } = operation;
+
+                    if (!Number.isInteger(key)) {
+                        throw new Error(
+                            `Invalid Splay Tree key: ${String(key)}`,
+                        );
+                    }
+
+                    if (type === 'search') {
+                        const searchPath = getSplayTreePath(root, key);
+                        const recursionFrames = getSplayRecursionFrames(root, key);
+                        let renderedRootKey = root === null ? null : root.key;
+                        const framesByRoot = new Map(
+                            recursionFrames.map(frame => [frame.rootKey, frame]),
+                        );
+                        const algorithmEvents = [];
+                        root = SplayTree.search(
+                            root,
+                            key,
+                            event => algorithmEvents.push(event),
+                        );
+                        const rotationsByDepth = countSplayRotationsByDepth(
+                            algorithmEvents,
+                        );
+
+                        searchPath.forEach((nodeKey, index) => {
+                            const parentKey = index === 0
+                                ? null
+                                : searchPath[index - 1];
+                            const recursionFrame = framesByRoot.get(nodeKey);
+
+                            chunker.add(
+                                'switchPath',
+                                (vis, currentKey, previousKey, searchedKey) => {
+                                    const graph = vis.graph;
+                                    graph.setFunctionName(`Search: ${searchedKey}`);
+                                    addSplayDepthBox(
+                                        graph,
+                                        recursionFrame,
+                                        'search',
+                                        recursionFrame
+                                            ? rotationsByDepth[recursionFrame.depth] || 0
+                                            : 0,
+                                    );
+
+                                    if (previousKey !== null) {
+                                        graph.setNodeColor(previousKey, colors.PATH_N);
+                                        graph.setEdgeColor(
+                                            previousKey,
+                                            currentKey,
+                                            colors.PATH_E,
+                                        );
+                                    }
+                                    graph.setNodeColor(currentKey, colors.PATH_N);
+                                },
+                                [nodeKey, parentKey, key],
+                                1,
+                            );
+                        });
+
+                        addSplayRotationChunks(
+                            chunker,
+                            algorithmEvents,
+                            'search',
+                            renderedRootKey,
+                        );
+                        addSplaySearchSnapshotChunk(chunker, root, key);
+                        return;
+                    }
+
+                    if (type !== 'insert') {
+                        throw new Error(
+                            `Unknown Splay Tree operation: ${String(type)}`,
+                        );
+                    }
+
+                    const searchPath = getSplayTreePath(root, key);
+                    const recursionFrames = getSplayRecursionFrames(root, key);
+                    let renderedRootKey = root === null ? null : root.key;
+                    const framesByRoot = new Map(
+                        recursionFrames.map(frame => [frame.rootKey, frame]),
+                    );
+                    const algorithmEvents = [];
+                    root = SplayTree.insert(
+                        root,
+                        key,
+                        event => algorithmEvents.push(event),
+                    );
+                    const rotationsByDepth = countSplayRotationsByDepth(
+                        algorithmEvents,
+                    );
+
+                    searchPath.forEach((nodeKey, index) => {
+                        const parentKey = index === 0
+                            ? null
+                            : searchPath[index - 1];
+                        const recursionFrame = framesByRoot.get(nodeKey);
+
+                        chunker.add(
+                            'switchPath',
+                            (vis, currentKey, previousKey, insertedKey) => {
+                                const graph = vis.graph;
+                                graph.setFunctionName(`Insert: ${insertedKey}`);
+                                addSplayDepthBox(
+                                    graph,
+                                    recursionFrame,
+                                    'insert',
+                                    recursionFrame
+                                        ? rotationsByDepth[recursionFrame.depth] || 0
+                                        : 0,
+                                );
+
+                                if (previousKey !== null) {
+                                    graph.setNodeColor(previousKey, colors.PATH_N);
+                                    graph.setEdgeColor(
+                                        previousKey,
+                                        currentKey,
+                                        colors.PATH_E,
+                                    );
+                                }
+                                graph.setNodeColor(currentKey, colors.PATH_N);
+                            },
+                            [nodeKey, parentKey, key],
+                            1,
+                        );
+                    });
+
+                    addSplayRotationChunks(
+                        chunker,
+                        algorithmEvents,
+                        'insert',
+                        renderedRootKey,
+                    );
+                    algorithmEvents
+                        .filter(event => event.type === 'insertion')
+                        .forEach(event => {
+                            addSplayInsertionBranchChunk(chunker, event);
+                        });
+                    const insertionEvent = algorithmEvents.find(
+                        event => event.type === 'insertion',
+                    );
+
+                    const {
+                        nodeKeys,
+                        edges,
+                        rootKey,
+                    } = createSplaySnapshot(root);
+
+                    chunker.add(
+                        'Main',
+                        (
+                            vis,
+                            keys,
+                            treeEdges,
+                            snapshotRoot,
+                            insertedKey,
+                            insertion,
+                        ) => {
+                            const graph = vis.graph;
+                            if (graph.clearRectangles) graph.clearRectangles();
+                            if (graph.clearTID) graph.clearTID();
+
+                            // Splaying changes the parent-child relationships,
+                            // so remove the previous edges before adding the snapshot edges.
+                            graph.setPauseLayout(true);
+                            [...graph.edges].forEach(({ source, target }) => {
+                                graph.removeEdge(source, target);
+                            });
+                            // Existing nodes are ignored by addNode. Clear the
+                            // traversal colour when displaying the new snapshot.
+                            keys.forEach(nodeKey => {
+                                graph.addNode(nodeKey, nodeKey);
+                                graph.setNodeColor(nodeKey, undefined);
+                            });
+
+                            // add current snapshot edges
+                            treeEdges.forEach(([parent, child]) => {
+                                graph.addEdge(parent, child);
+                            });
+
+                            graph.directed(true);
+                            graph.setPauseLayout(false);
+                            graph.layoutBST(snapshotRoot, true);
+                            const rootColor = insertion.action === 'duplicate'
+                                ? colors.FOUND_N
+                                : colors.NEW_N;
+                            graph.setNodeColor(snapshotRoot, rootColor);
+                            graph.setFunctionName(
+                                insertion.action === 'duplicate'
+                                    ? getSplayInsertionMessage(insertion)
+                                    : `Inserted: ${insertedKey}`,
+                            );
+                            graph.setFunctionInsertText();
+                        },
+                        [nodeKeys, edges, rootKey, key, insertionEvent],
+                        1,
+                    );
+                });
+
+                return root;
+            }
 
             // initialise the first key insertion
             // We now skip boxes etc even when recursion is expanded and
@@ -1301,4 +2046,3 @@ export default createTreeInsertionController(false);
 
 export const AVLTreeInsertion = createTreeInsertionController(true);
 export const BSTreeSearch = createTreeSearchController(false);
-

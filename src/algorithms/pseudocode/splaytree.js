@@ -182,6 +182,52 @@ for diagrams etc explaining rotations.
     t6.left <- t4 // may be Empty \\B t6.left = t4
     return (pointer to) t2 // new root \\B return t2
   \\In} 
+//==== Deletion ================================================
+ST_Delete(t, k) // delete key k from tree t; return result \\B Del
+\\Expl{ If k doesn't appear in t, no elements are removed, but the tree
+    returned will be a rearranged version of t (with the key next higher or
+    lower than k splayed to the root).
+\\Expl}
+\\In{
+  if t = Empty \\B Del_t_Empty
+  \\In{
+    return t \\B Del_return1
+  \\In}
+  Move the node closest to k to the root \\Ref DelSplay1
+  if t.key != k \\B Del_not_found
+  \\Expl{ The previous step moves k to the root if it exists in
+    the tree, so if t.key != k it means k doesn't exist in t and we
+    have nothing further to do.
+  \\Expl}
+  \\In{
+    return t // k is not in t \\B Del_return2
+  \\In}
+  if t.left = Empty \\B Del_left_empty
+  \\In{
+    return t.right // return t minus the root \\B Del_return3
+  \\In}
+  temp <- t.right \\B Del_init_temp
+  t <- t.left with maximum key moved to root \\Ref DelSplay2
+  t.right <- temp \\B Del_use_temp
+  \\Expl{ We add the previous right subtree so the tree now contains
+    all previous elements except k.
+  \\Expl}
+  return t \\B Del_return4
+\\In}
+\\Code}
+
+\\Code{
+DelSplay1
+  t <- splay(t, k) // move k to the root (if found) \\B Del_splay1
+\\Code}
+
+\\Code{
+DelSplay2
+  t <- splay(t.left, k) // max left key -> root \\B Del_splay2
+  \\Expl{ We splay t.left with key (or anything larger) to bring the
+    largest element of t.left up to the root; the right subtree must
+    therefore be empty.
+  \\Expl}
 \\Code}
 
 \\Code{
