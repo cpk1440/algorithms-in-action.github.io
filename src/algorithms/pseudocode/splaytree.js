@@ -108,7 +108,7 @@ splay(t, k) // Move node k to root of t
       Node k is in the right subtree of the right subtree.
     \\Expl}
     \\In{
-        Move node k to the top of the right-right subtree \\Ref LL-recurse
+        Move node k to the top of the right-right subtree \\Ref RR-recurse
         t <- leftRotate(t) // Move node k to the right of the root \\B LL-rot1
         \\Expl{
           This moves the whole right-right subtree (with k at the top, assuming
@@ -122,7 +122,7 @@ splay(t, k) // Move node k to root of t
       Node k is in the left subtree of the right subtree.
     \\Expl}
     \\In{
-        Move node k to the top of the right-left subtree \\Ref LR-recurse
+        Move node k to the top of the right-left subtree \\Ref RL-recurse
         t.right <- rightRotate(t.right) // Move node k to the right of the root \\B LR-rot1
         \\Expl{
           This moves the whole right-left node (containing k, assuming
