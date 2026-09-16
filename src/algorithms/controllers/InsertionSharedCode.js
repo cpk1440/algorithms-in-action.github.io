@@ -1175,11 +1175,11 @@ export function getSplayRecursionFrames(root, key) {
         let nextRecursionBlock = null;
 
         if (key < current.key && current.left !== null) {
-            if (key < current.left.key) {
+            if (key < current.left.key && current.left.left !== null) {
                 splayCase = 'LL';
                 nextRoot = current.left.left;
                 nextRecursionBlock = 'LL-recurse';
-            } else if (key > current.left.key) {
+            } else if (key > current.left.key && current.left.right !== null) {
                 splayCase = 'LR';
                 nextRoot = current.left.right;
                 nextRecursionBlock = 'LR-recurse';
@@ -1187,11 +1187,11 @@ export function getSplayRecursionFrames(root, key) {
                 splayCase = 'LE';
             }
         } else if (key > current.key && current.right !== null) {
-            if (key > current.right.key) {
+            if (key > current.right.key && current.right.right !== null) {
                 splayCase = 'RR';
                 nextRoot = current.right.right;
                 nextRecursionBlock = 'RR-recurse';
-            } else if (key < current.right.key) {
+            } else if (key < current.right.key && current.right.left !== null) {
                 splayCase = 'RL';
                 nextRoot = current.right.left;
                 nextRecursionBlock = 'RL-recurse';
@@ -1217,14 +1217,12 @@ export function getSplayRecursionFrames(root, key) {
     return frames;
 }
 
-function isSplayDepthExpanded(operationType, recursionBlock = null) {
+function isSplayDepthExpanded(operationType, recursionBlocks = [], mode = 'operations') {
     const operationBlock = operationType === 'search'
         ? 'search_splay'
         : 'insert_splay';
 
-    if (!areExpanded([operationBlock], 'operations')) return false;
-    return recursionBlock === null
-        || areExpanded([recursionBlock], 'operations');
+    return areExpanded([operationBlock, ...recursionBlocks], mode);
 }
 
 function getSplayCaseLabel(splayCase, rotationCount) {
@@ -1238,10 +1236,11 @@ function getSplayCaseLabel(splayCase, rotationCount) {
     return `Zig-Zag (${splayCase})`;
 }
 
-function addSplayDepthBox(graph, frame, operationType, rotationCount) {
+function addSplayDepthBox(graph, frame, operationType, rotationCount, recursionBlocks, mode) {
     if (!frame || !isSplayDepthExpanded(
         operationType,
-        frame.recursionBlock,
+        recursionBlocks,
+        mode,
     )) return;
 
     graph.pushRectStack(frame.nodeKeys, `Depth ${frame.depth}`);
@@ -1300,10 +1299,12 @@ export function addSplayRotationChunk(
     rotationCount = 1,
     renderedRootKey = null,
     includeCaseStep = true,
+    mode = 'operations',
 ) {
     const bookmarks = getSplayRotationBookmarks(event.direction);
     const rotationName = `${event.direction === 'right' ? 'Right' : 'Left'} rotation: ${event.pivotKey}`;
     const caseLabel = getSplayCaseLabel(event.splayCase, rotationCount);
+    const rotationDepth = event.depth + 1;
 
     if (includeCaseStep) {
         chunker.add(
@@ -1331,6 +1332,10 @@ export function addSplayRotationChunk(
             event.depth,
         );
     }
+
+    // Select this case's rotation call before entering the shared primitive.
+    // Symmetric cases have distinct bookmarks even when they rotate alike.
+    chunker.add(event.bookmark, () => {}, [event], event.depth);
 
     chunker.add(
         bookmarks.enter,
@@ -1362,7 +1367,7 @@ export function addSplayRotationChunk(
             }
         },
         [event],
-        event.depth,
+        rotationDepth,
     );
 
     chunker.add(
@@ -1384,7 +1389,7 @@ export function addSplayRotationChunk(
             );
         },
         [event],
-        event.depth,
+        rotationDepth,
     );
 
     chunker.add(
@@ -1405,7 +1410,7 @@ export function addSplayRotationChunk(
             }
         },
         [event],
-        event.depth,
+        rotationDepth,
     );
 
     chunker.add(
@@ -1426,7 +1431,7 @@ export function addSplayRotationChunk(
             graph.setEdgeColor(newRootKey, pivotKey, colors.ROT_E);
         },
         [event],
-        event.depth,
+        rotationDepth,
     );
 
     chunker.add(
@@ -1445,7 +1450,7 @@ export function addSplayRotationChunk(
             }
         },
         [event],
-        event.depth,
+        rotationDepth,
     );
 
     chunker.add(
@@ -1469,7 +1474,7 @@ export function addSplayRotationChunk(
             );
             if (graph.rectangle_size) graph.rectangle_size();
             graph.setFunctionName(
-                isSplayDepthExpanded(operationType)
+                isSplayDepthExpanded(operationType, [], mode)
                     ? `${caseLabel} — ${rotationName}`
                     : rotationName,
             );
@@ -1478,8 +1483,11 @@ export function addSplayRotationChunk(
             }
         },
         [event, renderedRootKey],
-        event.depth,
+        rotationDepth,
     );
+
+    // Resume the Splay caller after the rotation has returned its subtree root.
+    chunker.add(event.bookmark, () => {}, [event], event.depth);
 }
 
 // Register all primitive rotations for one Splay operation. A Zig-Zig or
@@ -1516,6 +1524,104 @@ export function addSplayRotationChunks(
     return renderedRootKey;
 }
 
+// Register each call in execution order: caller preparation, callee body,
+// then the caller's assignment. Collapsed blocks use these levels to skip
+// the entire call, even though the Splay function itself is in Main.
+function addSplayCallChunks(
+    chunker, frames, searchPath, events, operationType, key, initialRootKey, mode,
+) {
+    const callFrames = frames.length > 0 ? frames : [{
+        depth: 1,
+        nodeKeys: [],
+        recursionBlock: null,
+        rootKey: null,
+        splayCase: 'E',
+    }];
+    const rotationEvents = events.filter(event => event.type === 'rotation');
+    const rotationsByDepth = countSplayRotationsByDepth(rotationEvents);
+    const recursiveCalls = {
+        LL: ['pre-recurseLL', 'recurse-LL'],
+        LR: ['pre-recurseLR', 'recurseLR'],
+        RR: ['pre-recurseRR', 'recurseRR'],
+        RL: ['pre-recurseRL', 'recurse-RL'],
+    };
+    let renderedRootKey = initialRootKey;
+
+    function resumeCaller(bookmark, depth, frame = null) {
+        chunker.add(bookmark, (vis, callerDepth, caller, target) => {
+            const graph = vis.graph;
+            while (graph.rectangles && graph.rectangles.length > callerDepth) {
+                graph.popRectStack();
+            }
+            if (graph.clearTID) graph.clearTID();
+            if (graph.setTagInfo) graph.setTagInfo('');
+            graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
+            graph.setFunctionInsertText(caller
+                ? ` splayCase: ${getSplayCaseLabel(caller.splayCase, rotationsByDepth[caller.depth] || 0)}`
+                : undefined);
+        }, [depth, frame, key], depth);
+    }
+
+    function visitCall(index) {
+        const frame = callFrames[index];
+        const { depth, splayCase } = frame;
+        const recursionBlocks = callFrames.slice(0, index + 1)
+            .map(call => call.recursionBlock).filter(Boolean);
+        const rotationCount = rotationsByDepth[depth] || 0;
+
+        chunker.add('splay-enter', (vis, currentFrame, target, count, blocks) => {
+            const graph = vis.graph;
+            if (graph.clearTID) graph.clearTID();
+            graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
+            graph.setFunctionInsertText();
+            if (currentFrame.nodeKeys.length > 0) {
+                addSplayDepthBox(graph, currentFrame, operationType, count, blocks, mode);
+            }
+        }, [frame, key, rotationCount, recursionBlocks], depth);
+
+        const pathStart = searchPath.indexOf(frame.rootKey);
+        const path = pathStart < 0 ? [] : searchPath.slice(pathStart, pathStart + 3);
+        if (path.length === 0) chunker.add('switchPath', () => {}, [], depth);
+        // Preserve the existing per-node highlighting; F2 will combine these
+        // steps. Deeper calls begin only after this call's recursive preparation.
+        path.forEach((nodeKey, pathIndex) => {
+            const parentKey = pathIndex === 0 ? null : path[pathIndex - 1];
+            chunker.add('switchPath', (vis, currentKey, previousKey, target) => {
+                const graph = vis.graph;
+                graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
+                if (previousKey !== null) {
+                    graph.setNodeColor(previousKey, colors.PATH_N);
+                    graph.setEdgeColor(previousKey, currentKey, colors.PATH_E);
+                }
+                graph.setNodeColor(currentKey, colors.PATH_N);
+            }, [nodeKey, parentKey, key], depth);
+        });
+        chunker.add(getSplayCaseBookmark(splayCase), (vis, currentCase, count) => {
+            vis.graph.setFunctionInsertText(` splayCase: ${getSplayCaseLabel(currentCase, count)}`);
+        }, [splayCase, rotationCount], depth);
+
+        if (index + 1 < callFrames.length) {
+            const [prepare, returned] = recursiveCalls[splayCase];
+            chunker.add(prepare, () => {}, [], depth);
+            visitCall(index + 1);
+            resumeCaller(returned, depth, frame);
+        }
+
+        if (splayCase === 'E') chunker.add('E-return', () => {}, [], depth);
+        rotationEvents.filter(event => event.depth === depth).forEach(event => {
+            if (event.parentKey === null) renderedRootKey = event.newRootKey;
+            addSplayRotationChunk(
+                chunker, event, operationType, rotationCount, renderedRootKey, false, mode,
+            );
+        });
+        chunker.add('DoneSplay', () => {}, [], depth);
+    }
+
+    chunker.add(`pre-${operationType}-splay`, () => {}, [], 0);
+    visitCall(0);
+    resumeCaller(`${operationType}-splay-call`, 0);
+}
+
 function getSplayInsertionMessage(event) {
     switch (event.action) {
         case 'empty-tree':
@@ -1531,12 +1637,17 @@ function getSplayInsertionMessage(event) {
     }
 }
 
-// Show the insertion decision after splaying and before the completed-tree
-// snapshot is displayed. Main is used because the referenced insert_left and
-// insert_right code blocks do not define their own pseudocode bookmarks.
+// Show the insertion decision at its caller-level condition/comment. Keep
+// function-entry bookmarks reserved for the start of each operation.
 function addSplayInsertionBranchChunk(chunker, event) {
+    const bookmark = {
+        'empty-tree': 'insert-test-empty',
+        'insert-left': 'insert-test-left',
+        'insert-right': 'insert-test-right',
+        duplicate: 'insert-duplicate',
+    }[event.action];
     chunker.add(
-        event.bookmark,
+        bookmark,
         (vis, insertion) => {
             const graph = vis.graph;
             if (graph.clearTID) graph.clearTID();
@@ -1559,22 +1670,22 @@ function addSplayInsertionBranchChunk(chunker, event) {
             graph.setFunctionInsertText();
         },
         [event],
-        1,
+        0,
     );
 }
 
 function addSplaySearchSnapshotChunk(chunker, root, target) {
     if (root === null) {
         chunker.add(
-            '1',
+            'search-return-not-found',
             (vis, searchedKey) => {
                 if (vis.graph.clearRectangles) vis.graph.clearRectangles();
                 if (vis.graph.clearTID) vis.graph.clearTID();
-                vis.graph.setFunctionName(`Search failed: ${searchedKey}`);
+                vis.graph.setFunctionName(`Not found: ${searchedKey}`);
                 vis.graph.setFunctionInsertText();
             },
             [target],
-            1,
+            0,
         );
         return;
     }
@@ -1587,7 +1698,7 @@ function addSplaySearchSnapshotChunk(chunker, root, target) {
     const found = rootKey === target;
 
     chunker.add(
-        '1',
+        found ? 'search-return-found' : 'search-return-not-found',
         (vis, keys, treeEdges, snapshotRoot, searchedKey, isFound) => {
             const graph = vis.graph;
             if (graph.clearRectangles) graph.clearRectangles();
@@ -1613,12 +1724,12 @@ function addSplaySearchSnapshotChunk(chunker, root, target) {
                 isFound ? colors.FOUND_N : colors.PATH_N,
             );
             graph.setFunctionName(
-                isFound ? `Found: ${searchedKey}` : `Search failed: ${searchedKey}`,
+                isFound ? `Found: ${searchedKey}` : `Not found: ${searchedKey}`,
             );
             graph.setFunctionInsertText();
         },
         [nodeKeys, edges, rootKey, target, found],
-        1,
+        0,
     );
 }
 
@@ -1657,6 +1768,7 @@ export function createTreeInsertionController(isAVLp = false) {
             operations,
             visualiser,
             target,
+            mode = 'operations',
         }) {
             isInsert = true;
             const operationList = isSplayController
@@ -1672,32 +1784,29 @@ export function createTreeInsertionController(isAVLp = false) {
 
             if (operationList.length === 0) return;
 
-            // initial settings for the visualisation
-            chunker.add(
-                'Main',
-                (vis) => {
-                    if (isSplayController && vis.graph.clearRectangles) {
-                        vis.graph.clearRectangles();
-                    }
-                    if (isSplayController && vis.graph.clearTID) {
-                        vis.graph.clearTID();
-                    }
-                    vis.graph.isWeighted = isAVL;
-                    vis.graph.setFunctionName('Tree is Empty');
-                    vis.graph.setPauseLayout(false);
-                    vis.graph.setMoveRatio(1);
-                    vis.graph.setSize(1.2);
-                    vis.graph.setZoom(0.5);
-                },
-                [],
-                1
-            );
+            // Splay initializes its visualisation at the first operation's
+            // entry. Other tree controllers retain their existing setup step.
+            if (!isSplayController) {
+                chunker.add(
+                    'Main',
+                    (vis) => {
+                        vis.graph.isWeighted = isAVL;
+                        vis.graph.setFunctionName('Tree is Empty');
+                        vis.graph.setPauseLayout(false);
+                        vis.graph.setMoveRatio(1);
+                        vis.graph.setSize(1.2);
+                        vis.graph.setZoom(0.5);
+                    },
+                    [],
+                    1
+                );
+            }
             // Splay insertion stays in the pure data structure. Visual updates
             // are connected incrementally after the algorithm call is verified.
             if (isSplayController) {
                 let root = null;
 
-                operationList.forEach(operation => {
+                operationList.forEach((operation, operationIndex) => {
                     const { type, value: key } = operation;
 
                     if (!Number.isInteger(key)) {
@@ -1706,131 +1815,75 @@ export function createTreeInsertionController(isAVLp = false) {
                         );
                     }
 
+                    if (type !== 'insert' && type !== 'search') {
+                        throw new Error(
+                            `Unknown Splay Tree operation: ${String(type)}`,
+                        );
+                    }
+
+                    chunker.add(
+                        type === 'search' ? '1' : 'Main',
+                        (vis, operationType, currentKey, initialize) => {
+                            const graph = vis.graph;
+                            if (initialize) {
+                                graph.isWeighted = false;
+                                graph.setPauseLayout(false);
+                                graph.setMoveRatio(1);
+                                graph.setSize(1.2);
+                                graph.setZoom(0.5);
+                            }
+                            if (graph.clearRectangles) graph.clearRectangles();
+                            if (graph.clearTID) graph.clearTID();
+                            if (graph.setTagInfo) graph.setTagInfo('');
+                            graph.nodes.forEach(({ id }) => {
+                                graph.setNodeColor(id, undefined);
+                            });
+                            graph.edges.forEach(({ source, target: child }) => {
+                                graph.setEdgeColor(source, child, undefined);
+                            });
+                            graph.setFunctionName(
+                                `${operationType === 'search' ? 'Search' : 'Insert'}: ${currentKey}`,
+                            );
+                            graph.setFunctionInsertText();
+                        },
+                        [type, key, operationIndex === 0],
+                        0,
+                    );
+
                     if (type === 'search') {
                         const searchPath = getSplayTreePath(root, key);
                         const recursionFrames = getSplayRecursionFrames(root, key);
-                        let renderedRootKey = root === null ? null : root.key;
-                        const framesByRoot = new Map(
-                            recursionFrames.map(frame => [frame.rootKey, frame]),
-                        );
+                        const initialRootKey = root === null ? null : root.key;
                         const algorithmEvents = [];
                         root = SplayTree.search(
                             root,
                             key,
                             event => algorithmEvents.push(event),
                         );
-                        const rotationsByDepth = countSplayRotationsByDepth(
-                            algorithmEvents,
-                        );
-
-                        searchPath.forEach((nodeKey, index) => {
-                            const parentKey = index === 0
-                                ? null
-                                : searchPath[index - 1];
-                            const recursionFrame = framesByRoot.get(nodeKey);
-
-                            chunker.add(
-                                'switchPath',
-                                (vis, currentKey, previousKey, searchedKey) => {
-                                    const graph = vis.graph;
-                                    graph.setFunctionName(`Search: ${searchedKey}`);
-                                    addSplayDepthBox(
-                                        graph,
-                                        recursionFrame,
-                                        'search',
-                                        recursionFrame
-                                            ? rotationsByDepth[recursionFrame.depth] || 0
-                                            : 0,
-                                    );
-
-                                    if (previousKey !== null) {
-                                        graph.setNodeColor(previousKey, colors.PATH_N);
-                                        graph.setEdgeColor(
-                                            previousKey,
-                                            currentKey,
-                                            colors.PATH_E,
-                                        );
-                                    }
-                                    graph.setNodeColor(currentKey, colors.PATH_N);
-                                },
-                                [nodeKey, parentKey, key],
-                                1,
-                            );
-                        });
-
-                        addSplayRotationChunks(
-                            chunker,
-                            algorithmEvents,
-                            'search',
-                            renderedRootKey,
+                        addSplayCallChunks(
+                            chunker, recursionFrames, searchPath, algorithmEvents,
+                            'search', key, initialRootKey, mode,
                         );
                         addSplaySearchSnapshotChunk(chunker, root, key);
                         return;
                     }
 
-                    if (type !== 'insert') {
-                        throw new Error(
-                            `Unknown Splay Tree operation: ${String(type)}`,
-                        );
-                    }
-
                     const searchPath = getSplayTreePath(root, key);
                     const recursionFrames = getSplayRecursionFrames(root, key);
-                    let renderedRootKey = root === null ? null : root.key;
-                    const framesByRoot = new Map(
-                        recursionFrames.map(frame => [frame.rootKey, frame]),
-                    );
+                    const initialRootKey = root === null ? null : root.key;
                     const algorithmEvents = [];
                     root = SplayTree.insert(
                         root,
                         key,
                         event => algorithmEvents.push(event),
                     );
-                    const rotationsByDepth = countSplayRotationsByDepth(
-                        algorithmEvents,
-                    );
-
-                    searchPath.forEach((nodeKey, index) => {
-                        const parentKey = index === 0
-                            ? null
-                            : searchPath[index - 1];
-                        const recursionFrame = framesByRoot.get(nodeKey);
-
-                        chunker.add(
-                            'switchPath',
-                            (vis, currentKey, previousKey, insertedKey) => {
-                                const graph = vis.graph;
-                                graph.setFunctionName(`Insert: ${insertedKey}`);
-                                addSplayDepthBox(
-                                    graph,
-                                    recursionFrame,
-                                    'insert',
-                                    recursionFrame
-                                        ? rotationsByDepth[recursionFrame.depth] || 0
-                                        : 0,
-                                );
-
-                                if (previousKey !== null) {
-                                    graph.setNodeColor(previousKey, colors.PATH_N);
-                                    graph.setEdgeColor(
-                                        previousKey,
-                                        currentKey,
-                                        colors.PATH_E,
-                                    );
-                                }
-                                graph.setNodeColor(currentKey, colors.PATH_N);
-                            },
-                            [nodeKey, parentKey, key],
-                            1,
+                    // An empty-tree insertion returns before calling Splay.
+                    if (searchPath.length > 0) {
+                        addSplayCallChunks(
+                            chunker, recursionFrames, searchPath, algorithmEvents,
+                            'insert', key, initialRootKey, mode,
                         );
-                    });
-
-                    addSplayRotationChunks(
-                        chunker,
-                        algorithmEvents,
-                        'insert',
-                        renderedRootKey,
-                    );
+                    }
                     algorithmEvents
                         .filter(event => event.type === 'insertion')
                         .forEach(event => {
@@ -1847,7 +1900,9 @@ export function createTreeInsertionController(isAVLp = false) {
                     } = createSplaySnapshot(root);
 
                     chunker.add(
-                        'Main',
+                        insertionEvent.action === 'empty-tree'
+                            ? 'insert-return-empty'
+                            : 'insert-return',
                         (
                             vis,
                             keys,
@@ -1893,7 +1948,7 @@ export function createTreeInsertionController(isAVLp = false) {
                             graph.setFunctionInsertText();
                         },
                         [nodeKeys, edges, rootKey, key, insertionEvent],
-                        1,
+                        0,
                     );
                 });
 
