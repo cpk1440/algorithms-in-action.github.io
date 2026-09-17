@@ -1622,7 +1622,34 @@ function addSplaySearchSnapshotChunk(chunker, root, target) {
     );
 }
 
+function addSplayPathChunks(chunker, searchPath, recursionFrames, key, opsType, rotations) {
+    recursionFrames.forEach(frame => {
+        const startIdx = searchPath.indexOf(frame.rootKey);
+        const pathNodes = searchPath.slice(startIdx, startIdx + 3);
 
+        chunker.add('switchPath', (vis, nodes, targetKey, callFrame, rotationCount) => {
+            const graph = vis.graph;
+
+            graph.nodes.forEach(({ id }) => {
+                graph.setNodeColor(id, undefined);
+            });
+
+            graph.edges.forEach(({ source, target }) => {
+                graph.setEdgeColor(source, target, undefined);
+            });
+
+            const label = opsType === 'search' ? 'Search' : 'Insert';
+            graph.setFunctionName(`${label}: ${targetKey}`);
+
+            addSplayDepthBox(graph, callFrame, opsType, rotationCount);
+
+            nodes.forEach((nodeKey, idx) => {
+                graph.setNodeColor(nodeKey, colors.PATH_N);
+                if (idx > 0) { graph.setEdgeColor(nodes[idx - 1], nodeKey, colors.PATH_E); }
+            });
+        }, [pathNodes, key, frame, rotations[frame.depth] || 0], frame.depth);
+    });
+}
 // XXX interface currently uses true/false/'splay' to select a tree type;
 // consider replacing it with named options in a future refactor.
 // default is recursive BST insertion 
