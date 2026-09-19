@@ -1290,6 +1290,68 @@ function getSplayRotationBookmarks(direction) {
         };
 }
 
+function splayRotateStep(pos0, step){
+    const{ rX, rY, cX, cY } = pos0;
+    const deltaX = rX - cX;
+    const deltaY = rY - cY;
+    let deltaX1; 
+    const pos1 = { rX: 0, rY: 0, cX: 0, cY: 0};
+
+    if(step === 1){
+        pos1.rY = (2 * rY + cY) / 3;
+        pos1.cY = (rY + cY) / 2;
+        deltaX1 = Math.sqrt((35 / 36) * deltaY ** 2 + deltaX ** 2);
+    } else if (step === 2){
+        pos1.rY = (rY + 2 * cY) / 3;
+        pos1.cY = rY;
+        deltaX1 = Math.sqrt((5 / 9) * deltaY ** 2 + deltaX ** 2);
+    } else{
+        console.log('Invalid rotateStep step', step);
+    }
+
+    if(rX > cX) deltaX1 = -deltaX1;
+    pos1.rX = (0.6 * rX + 0.4 * cX) - 0.4 * deltaX1; 
+    pos1.cX = (0.6 * rX + 0.4 * cX) + 0.6 * deltaX1; 
+
+    return pos1;
+}
+
+function startSplayRotationMovement(graph, pivotKey, newRootKey, direction){
+    const pivot = graph.findNode(pivotKey);
+    const child = graph.findNode(newRootKey);
+    const children = graph.getTree()[pivotKey];
+    const outerChildKey = direction === 'right' ? children.right : children.left; 
+
+    graph.setRotPos({ rX: pivot.x, rY: pivot.y, cX: child.x, cY:child.y, outerChildKey });
+    moveSplayRotationPair(graph, pivotKey, newRootKey, 1);
+}
+
+function moveSplayRotationPair(graph, pivotKey, newRootKey, step){
+    const pos = splayRotateStep(graph.getRotPos(), step);
+
+    graph.setNodePosition(pivotKey, pos.rX, pos.rY);
+    graph.setNodePosition(newRootKey, pos.cX, pos.cY);
+}
+
+function centerSplayRotatedRoot(graph, newRootKey){
+    const pos0 = graph.getRotPos();
+    const pos2 = splayRotateStep(pos0, 2);
+
+    graph.setNodePosition(newRootKey, (pos0.rX + 3 * pos0.cX) / 4, pos2.cY);
+}
+
+function lowerSplayRotatedPivot(graph, pivotKey){
+    const pos0 = graph.getRotPos();
+    const pos2 = splayRotateStep(pos0, 2);
+    const deltaY = (pos2.rY - pos0.rY) / 3;
+
+    graph.setNodePosition(pivotKey, pos2.rX, pos2.rY + deltaY);
+
+    if(pos0.outerChildKey !== null && pos0.outerChildKey !== undefined){
+        graph.moveNodePosition(pos0.outerChildKey, 0, deltaY);
+    }
+}
+
 // Register the visual stages for one rotation reported by the pure Splay
 // Tree. The algorithm event contains only node keys; this helper translates
 // them into the same t2/t4/t6 pointer operations used by the AVL animation.
@@ -1382,6 +1444,8 @@ export function addSplayRotationChunk(
                 rotation.newRootKey,
                 colors.ROT_E,
             );
+
+            startSplayRotationMovement(graph, rotation.pivotKey, rotation.newRootKey, rotation.direction);
         },
         [event],
         event.depth,
@@ -1403,6 +1467,7 @@ export function addSplayRotationChunk(
             } else if (graph.setTagInfo) {
                 graph.setTagInfo('t4 ');
             }
+            moveSplayRotationPair(graph, rotation.pivotKey, rotation.newRootKey, 2);
         },
         [event],
         event.depth,
@@ -1424,6 +1489,7 @@ export function addSplayRotationChunk(
             }
             graph.addEdge(newRootKey, pivotKey);
             graph.setEdgeColor(newRootKey, pivotKey, colors.ROT_E);
+            centerSplayRotatedRoot(graph, newRootKey);
         },
         [event],
         event.depth,
@@ -1443,6 +1509,7 @@ export function addSplayRotationChunk(
                     colors.ROT_E,
                 );
             }
+            lowerSplayRotatedPivot(vis.graph, rotation.pivotKey);
         },
         [event],
         event.depth,
@@ -1737,9 +1804,7 @@ export function createTreeInsertionController(isAVLp = false) {
                         const searchPath = getSplayTreePath(root, key);
                         const recursionFrames = getSplayRecursionFrames(root, key);
                         let renderedRootKey = root === null ? null : root.key;
-                        const framesByRoot = new Map(
-                            recursionFrames.map(frame => [frame.rootKey, frame]),
-                        );
+                        
                         const algorithmEvents = [];
                         root = SplayTree.search(
                             root,
@@ -1750,40 +1815,7 @@ export function createTreeInsertionController(isAVLp = false) {
                             algorithmEvents,
                         );
 
-                        searchPath.forEach((nodeKey, index) => {
-                            const parentKey = index === 0
-                                ? null
-                                : searchPath[index - 1];
-                            const recursionFrame = framesByRoot.get(nodeKey);
-
-                            chunker.add(
-                                'switchPath',
-                                (vis, currentKey, previousKey, searchedKey) => {
-                                    const graph = vis.graph;
-                                    graph.setFunctionName(`Search: ${searchedKey}`);
-                                    addSplayDepthBox(
-                                        graph,
-                                        recursionFrame,
-                                        'search',
-                                        recursionFrame
-                                            ? rotationsByDepth[recursionFrame.depth] || 0
-                                            : 0,
-                                    );
-
-                                    if (previousKey !== null) {
-                                        graph.setNodeColor(previousKey, colors.PATH_N);
-                                        graph.setEdgeColor(
-                                            previousKey,
-                                            currentKey,
-                                            colors.PATH_E,
-                                        );
-                                    }
-                                    graph.setNodeColor(currentKey, colors.PATH_N);
-                                },
-                                [nodeKey, parentKey, key],
-                                1,
-                            );
-                        });
+                        addSplayPathChunks(chunker, searchPath, recursionFrames, key, 'search', rotationsByDepth);
 
                         addSplayRotationChunks(
                             chunker,
@@ -1804,9 +1836,7 @@ export function createTreeInsertionController(isAVLp = false) {
                     const searchPath = getSplayTreePath(root, key);
                     const recursionFrames = getSplayRecursionFrames(root, key);
                     let renderedRootKey = root === null ? null : root.key;
-                    const framesByRoot = new Map(
-                        recursionFrames.map(frame => [frame.rootKey, frame]),
-                    );
+                    
                     const algorithmEvents = [];
                     root = SplayTree.insert(
                         root,
@@ -1817,40 +1847,7 @@ export function createTreeInsertionController(isAVLp = false) {
                         algorithmEvents,
                     );
 
-                    searchPath.forEach((nodeKey, index) => {
-                        const parentKey = index === 0
-                            ? null
-                            : searchPath[index - 1];
-                        const recursionFrame = framesByRoot.get(nodeKey);
-
-                        chunker.add(
-                            'switchPath',
-                            (vis, currentKey, previousKey, insertedKey) => {
-                                const graph = vis.graph;
-                                graph.setFunctionName(`Insert: ${insertedKey}`);
-                                addSplayDepthBox(
-                                    graph,
-                                    recursionFrame,
-                                    'insert',
-                                    recursionFrame
-                                        ? rotationsByDepth[recursionFrame.depth] || 0
-                                        : 0,
-                                );
-
-                                if (previousKey !== null) {
-                                    graph.setNodeColor(previousKey, colors.PATH_N);
-                                    graph.setEdgeColor(
-                                        previousKey,
-                                        currentKey,
-                                        colors.PATH_E,
-                                    );
-                                }
-                                graph.setNodeColor(currentKey, colors.PATH_N);
-                            },
-                            [nodeKey, parentKey, key],
-                            1,
-                        );
-                    });
+                    addSplayPathChunks(chunker, searchPath, recursionFrames, key, 'insert', rotationsByDepth);
 
                     addSplayRotationChunks(
                         chunker,
