@@ -119,7 +119,9 @@ class SplayTree {
 
       let splayCase = 'LE';
 
-      if (key < root.left.key) {
+      // Two-edge cases require the second edge to exist. A missing
+      // grandchild is Left-Empty, just like finding k at the left child.
+      if (key < root.left.key && root.left.left !== null) {
         splayCase = 'LL';
         // Left-left: first splay inside the left-left subtree.
         root.left.left = SplayTree.splay(
@@ -135,7 +137,7 @@ class SplayTree {
           parentKey,
           depth,
         });
-      } else if (key > root.left.key) {
+      } else if (key > root.left.key && root.left.right !== null) {
         splayCase = 'LR';
         // Left-right: first splay inside the left-right subtree.
         root.left.right = SplayTree.splay(
@@ -172,7 +174,8 @@ class SplayTree {
 
     let splayCase = 'RE';
 
-    if (key > root.right.key) {
+    // Mirror the Left-Empty rule when the requested right grandchild is absent.
+    if (key > root.right.key && root.right.right !== null) {
       splayCase = 'RR';
       // Right-right: first splay inside the right-right subtree.
       root.right.right = SplayTree.splay(
@@ -183,13 +186,12 @@ class SplayTree {
         depth + 1,
       );
       root = SplayTree.leftRotateWithEvent(root, onEvent, {
-        // The existing pseudocode reuses the LL rotation bookmarks here.
-        bookmark: 'LL-rot1',
+        bookmark: 'RR-rot1',
         splayCase,
         parentKey,
         depth,
       });
-    } else if (key < root.right.key) {
+    } else if (key < root.right.key && root.right.left !== null) {
       splayCase = 'RL';
       // Right-left: first splay inside the right-left subtree.
       root.right.left = SplayTree.splay(
@@ -201,7 +203,7 @@ class SplayTree {
       );
       if (root.right.left !== null) {
         root.right = SplayTree.rightRotateWithEvent(root.right, onEvent, {
-          bookmark: 'LR-rot1',
+          bookmark: 'RL-rot1',
           splayCase,
           parentKey: root.key,
           depth,
@@ -212,12 +214,8 @@ class SplayTree {
     // This is also the single-rotation case when the key is the right child.
     if (root.right === null) return root;
 
-    let bookmark = 'RE-rot1';
-    if (splayCase === 'RR') bookmark = 'LL-rot2';
-    if (splayCase === 'RL') bookmark = 'LR-rot2';
-
     return SplayTree.leftRotateWithEvent(root, onEvent, {
-      bookmark,
+      bookmark: splayCase === 'RE' ? 'RE-rot1' : `${splayCase}-rot2`,
       splayCase,
       parentKey,
       depth,

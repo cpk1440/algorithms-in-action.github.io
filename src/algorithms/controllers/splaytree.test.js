@@ -223,7 +223,7 @@ describe('SplayTree.delete', () => {
 });
 
 describe('SplayTree rotation events', () => {
-  it('reports single right and left rotations with existing bookmarks', () => {
+  it('reports Left-Empty and Right-Empty when the target is a direct child', () => {
     const rightRoot = new Node(100);
     rightRoot.left = new Node(50);
     rightRoot.left.right = new Node(75);
@@ -263,6 +263,72 @@ describe('SplayTree rotation events', () => {
     }]);
   });
 
+  it.each([
+    ['left-left', 100, 'left', 50, 'right', 75, 25, 'LE', 'right'],
+    ['left-right', 100, 'left', 50, 'left', 25, 75, 'LE', 'right'],
+    ['right-right', 50, 'right', 100, 'left', 75, 125, 'RE', 'left'],
+    ['right-left', 50, 'right', 100, 'right', 125, 75, 'RE', 'left'],
+  ])(
+    'reports a single Empty case when the searched %s grandchild is missing',
+    (
+      missingPath, rootKey, childSide, childKey, otherSide, otherKey,
+      target, splayCase, direction,
+    ) => {
+      const root = new Node(rootKey);
+      root[childSide] = new Node(childKey);
+      root[childSide][otherSide] = new Node(otherKey);
+      const originalKeys = inOrder(root);
+      const events = [];
+
+      const result = SplayTree.search(root, target, event => events.push(event));
+
+      expect(result.key).toBe(childKey);
+      expect(inOrder(result)).toEqual(originalKeys);
+      expect(countNodes(result)).toBe(3);
+      expect(events).toEqual([{
+        type: 'rotation',
+        direction,
+        bookmark: `${splayCase}-rot1`,
+        splayCase,
+        parentKey: null,
+        depth: 1,
+        pivotKey: rootKey,
+        newRootKey: childKey,
+        transferredSubtreeKey: childSide === otherSide ? null : otherKey,
+      }]);
+    },
+  );
+
+  it.each([
+    ['an empty tree', () => null, 50],
+    ['a root hit', () => {
+      const root = new Node(50);
+      root.left = new Node(25);
+      root.right = new Node(75);
+      return root;
+    }, 50],
+    ['a missing left child', () => {
+      const root = new Node(50);
+      root.right = new Node(75);
+      return root;
+    }, 25],
+    ['a missing right child', () => {
+      const root = new Node(50);
+      root.left = new Node(25);
+      return root;
+    }, 75],
+  ])('does not report rotations for %s', (description, createRoot, target) => {
+    const root = createRoot();
+    const originalKeys = inOrder(root);
+    const events = [];
+
+    const result = SplayTree.search(root, target, event => events.push(event));
+
+    expect(result).toBe(root);
+    expect(inOrder(result)).toEqual(originalKeys);
+    expect(events).toEqual([]);
+  });
+
   it('reports both rotations in left-left and right-right cases', () => {
     const leftLeftRoot = new Node(100);
     leftLeftRoot.left = new Node(50);
@@ -279,6 +345,8 @@ describe('SplayTree rotation events', () => {
       direction: event.direction,
       bookmark: event.bookmark,
       splayCase: event.splayCase,
+      parentKey: event.parentKey,
+      depth: event.depth,
       pivotKey: event.pivotKey,
       newRootKey: event.newRootKey,
     }))).toEqual([
@@ -286,6 +354,8 @@ describe('SplayTree rotation events', () => {
         direction: 'right',
         bookmark: 'LL-rot1',
         splayCase: 'LL',
+        parentKey: null,
+        depth: 1,
         pivotKey: 100,
         newRootKey: 50,
       },
@@ -293,6 +363,8 @@ describe('SplayTree rotation events', () => {
         direction: 'right',
         bookmark: 'LL-rot2',
         splayCase: 'LL',
+        parentKey: null,
+        depth: 1,
         pivotKey: 50,
         newRootKey: 25,
       },
@@ -313,20 +385,26 @@ describe('SplayTree rotation events', () => {
       direction: event.direction,
       bookmark: event.bookmark,
       splayCase: event.splayCase,
+      parentKey: event.parentKey,
+      depth: event.depth,
       pivotKey: event.pivotKey,
       newRootKey: event.newRootKey,
     }))).toEqual([
       {
         direction: 'left',
-        bookmark: 'LL-rot1',
+        bookmark: 'RR-rot1',
         splayCase: 'RR',
+        parentKey: null,
+        depth: 1,
         pivotKey: 25,
         newRootKey: 50,
       },
       {
         direction: 'left',
-        bookmark: 'LL-rot2',
+        bookmark: 'RR-rot2',
         splayCase: 'RR',
+        parentKey: null,
+        depth: 1,
         pivotKey: 50,
         newRootKey: 100,
       },
@@ -348,21 +426,27 @@ describe('SplayTree rotation events', () => {
     expect(leftRightEvents.map(event => ({
       direction: event.direction,
       bookmark: event.bookmark,
+      splayCase: event.splayCase,
       parentKey: event.parentKey,
+      depth: event.depth,
       pivotKey: event.pivotKey,
       newRootKey: event.newRootKey,
     }))).toEqual([
       {
         direction: 'left',
         bookmark: 'LR-rot1',
+        splayCase: 'LR',
         parentKey: 100,
+        depth: 1,
         pivotKey: 50,
         newRootKey: 75,
       },
       {
         direction: 'right',
         bookmark: 'LR-rot2',
+        splayCase: 'LR',
         parentKey: null,
+        depth: 1,
         pivotKey: 100,
         newRootKey: 75,
       },
@@ -382,21 +466,27 @@ describe('SplayTree rotation events', () => {
     expect(rightLeftEvents.map(event => ({
       direction: event.direction,
       bookmark: event.bookmark,
+      splayCase: event.splayCase,
       parentKey: event.parentKey,
+      depth: event.depth,
       pivotKey: event.pivotKey,
       newRootKey: event.newRootKey,
     }))).toEqual([
       {
         direction: 'right',
-        bookmark: 'LR-rot1',
+        bookmark: 'RL-rot1',
+        splayCase: 'RL',
         parentKey: 25,
+        depth: 1,
         pivotKey: 100,
         newRootKey: 75,
       },
       {
         direction: 'left',
-        bookmark: 'LR-rot2',
+        bookmark: 'RL-rot2',
+        splayCase: 'RL',
         parentKey: null,
+        depth: 1,
         pivotKey: 25,
         newRootKey: 75,
       },
@@ -410,11 +500,15 @@ describe('SplayTree rotation events', () => {
     root.left.left.left = new Node(10);
     const events = [];
 
-    SplayTree.splay(root, 10, event => events.push(event));
+    const result = SplayTree.splay(root, 10, event => events.push(event));
 
+    expect(result.key).toBe(10);
+    expect(inOrder(result)).toEqual([10, 25, 50, 100]);
     expect(events[0]).toMatchObject({
       direction: 'right',
       bookmark: 'LE-rot1',
+      splayCase: 'LE',
+      depth: 2,
       parentKey: 50,
       pivotKey: 25,
       newRootKey: 10,
