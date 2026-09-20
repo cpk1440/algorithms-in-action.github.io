@@ -1289,6 +1289,68 @@ function getSplayRotationBookmarks(direction) {
         };
 }
 
+function splayRotateStep(pos0, step) {
+    const { rX, rY, cX, cY } = pos0;
+    const deltaX = rX - cX;
+    const deltaY = rY - cY;
+    let deltaX1;
+    const pos1 = { rX: 0, rY: 0, cX: 0, cY: 0 };
+
+    if (step === 1) {
+        pos1.rY = (2 * rY + cY) / 3;
+        pos1.cY = (rY + cY) / 2;
+        deltaX1 = Math.sqrt((35 / 36) * deltaY ** 2 + deltaX ** 2);
+    } else if (step === 2) {
+        pos1.rY = (rY + 2 * cY) / 3;
+        pos1.cY = rY;
+        deltaX1 = Math.sqrt((5 / 9) * deltaY ** 2 + deltaX ** 2);
+    } else {
+        console.log('Invalid rotateStep step', step);
+    }
+
+    if (rX > cX) deltaX1 = -deltaX1;
+    pos1.rX = (0.6 * rX + 0.4 * cX) - 0.4 * deltaX1;
+    pos1.cX = (0.6 * rX + 0.4 * cX) + 0.6 * deltaX1;
+
+    return pos1;
+}
+
+function startSplayRotationMovement(graph, pivotKey, newRootKey, direction) {
+    const pivot = graph.findNode(pivotKey);
+    const child = graph.findNode(newRootKey);
+    const children = graph.getTree()[pivotKey];
+    const outerChildKey = direction === 'right' ? children.right : children.left;
+
+    graph.setRotPos({ rX: pivot.x, rY: pivot.y, cX: child.x, cY: child.y, outerChildKey });
+    moveSplayRotationPair(graph, pivotKey, newRootKey, 1);
+}
+
+function moveSplayRotationPair(graph, pivotKey, newRootKey, step) {
+    const pos = splayRotateStep(graph.getRotPos(), step);
+
+    graph.setNodePosition(pivotKey, pos.rX, pos.rY);
+    graph.setNodePosition(newRootKey, pos.cX, pos.cY);
+}
+
+function centerSplayRotatedRoot(graph, newRootKey) {
+    const pos0 = graph.getRotPos();
+    const pos2 = splayRotateStep(pos0, 2);
+
+    graph.setNodePosition(newRootKey, (pos0.rX + 3 * pos0.cX) / 4, pos2.cY);
+}
+
+function lowerSplayRotatedPivot(graph, pivotKey) {
+    const pos0 = graph.getRotPos();
+    const pos2 = splayRotateStep(pos0, 2);
+    const deltaY = (pos2.rY - pos0.rY) / 3;
+
+    graph.setNodePosition(pivotKey, pos2.rX, pos2.rY + deltaY);
+
+    if (pos0.outerChildKey !== null && pos0.outerChildKey !== undefined) {
+        graph.moveNodePosition(pos0.outerChildKey, 0, deltaY);
+    }
+}
+
 // Register the visual stages for one rotation reported by the pure Splay
 // Tree. The algorithm event contains only node keys; this helper translates
 // them into the same t2/t4/t6 pointer operations used by the AVL animation.
@@ -1387,6 +1449,8 @@ export function addSplayRotationChunk(
                 rotation.newRootKey,
                 colors.ROT_E,
             );
+
+            startSplayRotationMovement(graph, rotation.pivotKey, rotation.newRootKey, rotation.direction);
         },
         [event],
         rotationDepth,
@@ -1408,6 +1472,7 @@ export function addSplayRotationChunk(
             } else if (graph.setTagInfo) {
                 graph.setTagInfo('t4 ');
             }
+            moveSplayRotationPair(graph, rotation.pivotKey, rotation.newRootKey, 2);
         },
         [event],
         rotationDepth,
@@ -1429,6 +1494,7 @@ export function addSplayRotationChunk(
             }
             graph.addEdge(newRootKey, pivotKey);
             graph.setEdgeColor(newRootKey, pivotKey, colors.ROT_E);
+            centerSplayRotatedRoot(graph, newRootKey);
         },
         [event],
         rotationDepth,
@@ -1448,6 +1514,7 @@ export function addSplayRotationChunk(
                     colors.ROT_E,
                 );
             }
+            lowerSplayRotatedPivot(vis.graph, rotation.pivotKey);
         },
         [event],
         rotationDepth,
@@ -1581,21 +1648,22 @@ function addSplayCallChunks(
 
         const pathStart = searchPath.indexOf(frame.rootKey);
         const path = pathStart < 0 ? [] : searchPath.slice(pathStart, pathStart + 3);
-        if (path.length === 0) chunker.add('switchPath', () => {}, [], depth);
-        // Preserve the existing per-node highlighting; F2 will combine these
-        // steps. Deeper calls begin only after this call's recursive preparation.
-        path.forEach((nodeKey, pathIndex) => {
-            const parentKey = pathIndex === 0 ? null : path[pathIndex - 1];
-            chunker.add('switchPath', (vis, currentKey, previousKey, target) => {
-                const graph = vis.graph;
-                graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
-                if (previousKey !== null) {
-                    graph.setNodeColor(previousKey, colors.PATH_N);
-                    graph.setEdgeColor(previousKey, currentKey, colors.PATH_E);
+        // Highlight only this call's first two edges, together in one step.
+        // Keep call entry and depth-box creation at splay-enter above.
+        chunker.add('switchPath', (vis, pathNodes, target) => {
+            const graph = vis.graph;
+            graph.nodes.forEach(({ id }) => graph.setNodeColor(id, undefined));
+            graph.edges.forEach(({ source, target: child }) => {
+                graph.setEdgeColor(source, child, undefined);
+            });
+            graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
+            pathNodes.forEach((nodeKey, pathIndex) => {
+                graph.setNodeColor(nodeKey, colors.PATH_N);
+                if (pathIndex > 0) {
+                    graph.setEdgeColor(pathNodes[pathIndex - 1], nodeKey, colors.PATH_E);
                 }
-                graph.setNodeColor(currentKey, colors.PATH_N);
-            }, [nodeKey, parentKey, key], depth);
-        });
+            });
+        }, [path, key], depth);
         chunker.add(getSplayCaseBookmark(splayCase), (vis, currentCase, count) => {
             vis.graph.setFunctionInsertText(` splayCase: ${getSplayCaseLabel(currentCase, count)}`);
         }, [splayCase, rotationCount], depth);
@@ -1732,7 +1800,6 @@ function addSplaySearchSnapshotChunk(chunker, root, target) {
         0,
     );
 }
-
 
 // XXX interface currently uses true/false/'splay' to select a tree type;
 // consider replacing it with named options in a future refactor.

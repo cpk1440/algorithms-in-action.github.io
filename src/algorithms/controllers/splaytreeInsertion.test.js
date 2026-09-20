@@ -107,6 +107,47 @@ describe('SplayTreeInsertion controller', () => {
     initGlobalAlgotithmGetter(() => null, () => {});
   });
 
+  describe('switch path highlighting', () => {
+    it.each([
+        ['empty search', [], 'search', 10, [[]]],
+        ['target at root', [10], 'search', 10, [[]]],
+        ['target at child', [10, 20], 'search', 10, [[[20, 10]]]],
+        ['two edges together', [10, 20, 30], 'search', 10, [[[30, 20], [20, 10]], []]],
+        ['nested left calls', [10, 20, 30, 40, 50], 'search', 10, [[[50, 40], [40, 30]], [[30, 20], [20, 10]], []]],
+        ['nested right calls', [50, 40, 30, 20, 10], 'search', 50, [[[10, 20], [20, 30]], [[30, 40], [40, 50]], []]],
+        ['missing target', [10, 20, 30], 'search', 5, [[[30, 20], [20, 10]], []]],
+        ['insertion path', [10, 20, 30], 'insert', 5, [[[30, 20], [20, 10]], []]],
+    ])('%s', (name, initialKeys, type, key, expectedSteps) => {
+        const chunks = [];
+        const graph = SplayTreeInsertion.initVisualisers({ visualiser: {} }).graph.instance;
+
+        const operations = initialKeys.map(value => ({ type: 'insert', value }));
+        operations.push({ type, value: key });
+
+        SplayTreeInsertion.run(createChunker(chunks), { operations });
+
+        const label = `${type === 'search' ? 'Search' : 'Insert'}: ${key}`;
+        const actualSteps = [];
+        const normalize = edges => edges.map(edge => edge.join('->')).sort();
+
+        chunks.forEach(({ bookmark, callback, args = [] }) => {
+            if (callback) { callback({ graph }, ...args); }
+
+            // Record only the final operation's switch steps.
+            if (bookmark === 'switchPath' && graph.functionName === label) {
+                const highlightedEdges = graph.edges
+                    .filter(edge => edge.color === colors.PATH_E)
+                    .map(edge => [edge.source, edge.target]);
+
+                expect(highlightedEdges.length).toBeLessThanOrEqual(2);
+                actualSteps.push(normalize(highlightedEdges));
+            }
+        });
+
+        expect(actualSteps).toEqual(expectedSteps.map(normalize));
+    });
+  });
+
   it('handles an empty input without registering animation chunks', () => {
     const chunks = [];
 
@@ -170,7 +211,6 @@ describe('SplayTreeInsertion controller', () => {
       'Main',
       'pre-insert-splay',
       'splay-enter',
-      'switchPath',
       'switchPath',
       'right-empty',
       'RE-rot1',
@@ -313,7 +353,7 @@ describe('SplayTreeInsertion controller', () => {
     ))).toBe(true);
   });
 
-  it('registers the BST search path before each Splay insertion', () => {
+  it('registers one complete switch path before each Splay insertion', () => {
     const chunks = [];
 
     SplayTreeInsertion.run(
@@ -326,18 +366,19 @@ describe('SplayTreeInsertion controller', () => {
     );
 
     expect(traversalChunks.map(chunk => chunk.args)).toEqual([
-      [40, null, 20],
-      [20, null, 60],
-      [40, 20, 60],
+      [[40], 20],
+      [[20, 40], 60],
     ]);
 
     const graph = {
+      nodes: [{ id: 20 }, { id: 40 }],
+      edges: [{ source: 20, target: 40 }],
       setEdgeColor: jest.fn(),
       setFunctionInsertText: jest.fn(),
       setFunctionName: jest.fn(),
       setNodeColor: jest.fn(),
     };
-    const lastTraversalChunk = traversalChunks[2];
+    const lastTraversalChunk = traversalChunks[1];
 
     lastTraversalChunk.callback(
       { graph },
@@ -351,6 +392,8 @@ describe('SplayTreeInsertion controller', () => {
       colors.PATH_E,
     );
     expect(graph.setNodeColor.mock.calls).toEqual([
+      [20, undefined],
+      [40, undefined],
       [20, colors.PATH_N],
       [40, colors.PATH_N],
     ]);
@@ -453,7 +496,7 @@ describe('SplayTreeInsertion controller', () => {
       .toEqual([1, 2, 2, 2, 2, 2, 2, 1]);
 
     const graph = {
-      nodes: [{ id: 20 }, { id: 40 }],
+      nodes: [{ id: 20, x: 0, y: 0 }, { id: 40, x: 100, y: 100 }],
       edges: [{ source: 20, target: 40 }],
       addEdge: jest.fn(),
       clearTID: jest.fn(),
@@ -468,6 +511,12 @@ describe('SplayTreeInsertion controller', () => {
       setPauseLayout: jest.fn(),
       setTagInfo: jest.fn(),
       updateTID: jest.fn(),
+      findNode: jest.fn(id => graph.nodes.find(node => node.id === id)),
+      getTree: jest.fn(() => ({ 20: { right: 40 }, 40: {} })),
+      setRotPos: jest.fn(pos => { graph.rotPos = pos; }),
+      getRotPos: jest.fn(() => graph.rotPos),
+      setNodePosition: jest.fn((id, x, y) => { Object.assign(graph.findNode(id), { x, y }); }),
+      moveNodePosition: jest.fn(),
     };
 
     rotationChunks.forEach(chunk => {
@@ -646,8 +695,43 @@ describe('SplayTreeInsertion controller', () => {
         || chunk.bookmark === 'rightRotate(t6)'
       )).map(chunk => chunk.bookmark)).toEqual(rotationBookmarks);
 
-      chunks.forEach(({ callback, args = [] }) => {
+      let beforeRotation;
+      const hasEdge = (source, target) => graph.edges.some(
+        edge => edge.source === source && edge.target === target,
+      );
+      chunks.forEach(({ bookmark, callback, args = [] }) => {
         callback({ graph }, ...args);
+
+        const rotation = args[0];
+        if (!rotation || rotation.type !== 'rotation') return;
+        const { pivotKey, newRootKey, transferredSubtreeKey } = rotation;
+        const pivot = graph.findNode(pivotKey);
+        const newRoot = graph.findNode(newRootKey);
+
+        if (bookmark === 'leftRotate(t2)' || bookmark === 'rightRotate(t6)') {
+          beforeRotation = { pivotY: pivot.y, childY: newRoot.y };
+        } else if (bookmark === 't6 = right(t2)' || bookmark === 't2 = left(t6)') {
+          // The first movement raises the child and lowers the pivot while
+          // keeping the original links until the pointer-assignment steps.
+          expect(newRoot.y).toBeLessThan(beforeRotation.childY);
+          expect(newRoot.y).toBeGreaterThan(beforeRotation.pivotY);
+          expect(pivot.y).toBeGreaterThan(beforeRotation.pivotY);
+          expect(pivot.y).toBeLessThan(beforeRotation.childY);
+          expect(hasEdge(pivotKey, newRootKey)).toBe(true);
+          expect(hasEdge(newRootKey, transferredSubtreeKey)).toBe(true);
+        } else if (bookmark === 't4 = left(t6)' || bookmark === 't4 = right(t2)') {
+          expect(newRoot.y).toBeCloseTo(beforeRotation.pivotY);
+          expect(pivot.y).toBeGreaterThan(newRoot.y);
+        } else if (bookmark === 't6.left = t2' || bookmark === 't2.right = t6') {
+          expect(hasEdge(pivotKey, newRootKey)).toBe(false);
+          expect(hasEdge(newRootKey, pivotKey)).toBe(true);
+          expect(hasEdge(newRootKey, transferredSubtreeKey)).toBe(false);
+          expect(hasEdge(pivotKey, transferredSubtreeKey)).toBe(false);
+        } else if (bookmark === 't2.right = t4' || bookmark === 't6.left = t4') {
+          expect(hasEdge(pivotKey, transferredSubtreeKey)).toBe(true);
+        }
+        expect(graph.nodes.every(node => Number.isFinite(node.x) && Number.isFinite(node.y)))
+          .toBe(true);
       });
 
       expect(graph.getRoot()).toBe(result.key);
@@ -1063,13 +1147,11 @@ describe('SplayTreeInsertion controller', () => {
       const searchChunks = chunks.slice(firstSearchChunk);
 
       expect(searchChunks.filter(chunk => chunk.bookmark === 'switchPath'))
-        .toHaveLength(4);
+        .toHaveLength(2);
       expect(searchChunks.map(chunk => chunk.bookmark)).toEqual([
         '1',
         'pre-search-splay',
         'splay-enter',
-        'switchPath',
-        'switchPath',
         'switchPath',
         'left-left',
         'pre-recurseLL',
