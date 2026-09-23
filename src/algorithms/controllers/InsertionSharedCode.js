@@ -1330,6 +1330,8 @@ function moveSplayRotationPair(graph, pivotKey, newRootKey, step) {
 
     graph.setNodePosition(pivotKey, pos.rX, pos.rY);
     graph.setNodePosition(newRootKey, pos.cX, pos.cY);
+
+    graph.rectangle_size();
 }
 
 function centerSplayRotatedRoot(graph, newRootKey) {
@@ -1337,6 +1339,8 @@ function centerSplayRotatedRoot(graph, newRootKey) {
     const pos2 = splayRotateStep(pos0, 2);
 
     graph.setNodePosition(newRootKey, (pos0.rX + 3 * pos0.cX) / 4, pos2.cY);
+
+    graph.rectangle_size();
 }
 
 function lowerSplayRotatedPivot(graph, pivotKey) {
@@ -1347,8 +1351,20 @@ function lowerSplayRotatedPivot(graph, pivotKey) {
     graph.setNodePosition(pivotKey, pos2.rX, pos2.rY + deltaY);
 
     if (pos0.outerChildKey !== null && pos0.outerChildKey !== undefined) {
-        graph.moveNodePosition(pos0.outerChildKey, 0, deltaY);
+        const tree = graph.getTree();
+
+        const move = key => {
+            if (key === null || key === undefined) return;
+
+            graph.moveNodePosition(key, 0, deltaY);
+            move(tree[key].left);
+            move(tree[key].right);
+        };
+
+        move(pos0.outerChildKey);
     }
+
+    graph.rectangle_size();
 }
 
 // Register the visual stages for one rotation reported by the pure Splay
@@ -1534,11 +1550,9 @@ export function addSplayRotationChunk(
 
             if (graph.setTagInfo) graph.setTagInfo('');
             graph.directed(true);
+            graph.setMoveRatio(3 / 6);
             graph.setPauseLayout(false);
-            graph.layoutBST(
-                explicitRootKey === null ? graph.getRoot() : explicitRootKey,
-                true,
-            );
+            graph.layoutAVL(explicitRootKey === null ? graph.getRoot() : explicitRootKey, true);
             if (graph.rectangle_size) graph.rectangle_size();
             graph.setFunctionName(
                 isSplayDepthExpanded(operationType, [], mode)
@@ -1786,7 +1800,8 @@ function addSplaySearchSnapshotChunk(chunker, root, target) {
 
             graph.directed(true);
             graph.setPauseLayout(false);
-            graph.layoutBST(snapshotRoot, true);
+            graph.root = snapshotRoot;
+            graph.rectangle_size();
             graph.setNodeColor(
                 searchedKey,
                 isFound ? colors.FOUND_N : colors.PATH_N,
@@ -2002,7 +2017,12 @@ export function createTreeInsertionController(isAVLp = false) {
 
                             graph.directed(true);
                             graph.setPauseLayout(false);
-                            graph.layoutBST(snapshotRoot, true);
+                            if (insertion.action !== 'duplicate') {
+                                graph.setMoveRatio(1);
+                                graph.layoutAVL(snapshotRoot, true);
+                            }
+
+                            graph.rectangle_size();
                             const rootColor = insertion.action === 'duplicate'
                                 ? colors.FOUND_N
                                 : colors.NEW_N;
