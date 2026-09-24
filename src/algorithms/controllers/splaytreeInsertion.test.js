@@ -82,11 +82,12 @@ function renderTree(graph, root) {
   graph.layoutBST(root.key, true);
 }
 
-function getInsertionSnapshots(chunks) {
+function getInsertionReturns(chunks) {
   return chunks.filter(
     chunk => ['insert-return-empty', 'insert-return'].includes(chunk.bookmark)
       && chunk.args
-      && Array.isArray(chunk.args[0]),
+      && chunk.args[2]
+      && chunk.args[2].type === 'insertion',
   );
 }
 
@@ -186,7 +187,7 @@ describe('SplayTreeInsertion controller', () => {
     });
   });
 
-  it('registers one independent snapshot after every insertion', () => {
+  it('registers insertion stages followed by an independent return for each insertion', () => {
     const chunks = [];
 
     SplayTreeInsertion.run(
@@ -207,6 +208,9 @@ describe('SplayTreeInsertion controller', () => {
       'DoneSplay',
       'insert-splay-call',
       'insert-test-left',
+      'insert-left-save',
+      'insert-left-detach',
+      'insert-left-create',
       'insert-return',
       'Main',
       'pre-insert-splay',
@@ -224,14 +228,15 @@ describe('SplayTreeInsertion controller', () => {
       'DoneSplay',
       'insert-splay-call',
       'insert-test-right',
+      'insert-right-save',
+      'insert-right-detach',
+      'insert-right-create',
       'insert-return',
     ]);
 
-    const insertionSnapshots = getInsertionSnapshots(chunks);
+    const insertionReturns = getInsertionReturns(chunks);
 
-    expect(insertionSnapshots[0].args).toEqual([
-      [40],
-      [],
+    expect(insertionReturns[0].args).toEqual([
       40,
       40,
       {
@@ -242,9 +247,7 @@ describe('SplayTreeInsertion controller', () => {
         rootKey: null,
       },
     ]);
-    expect(insertionSnapshots[1].args).toEqual([
-      [20, 40],
-      [[20, 40]],
+    expect(insertionReturns[1].args).toEqual([
       20,
       20,
       {
@@ -255,9 +258,7 @@ describe('SplayTreeInsertion controller', () => {
         rootKey: 40,
       },
     ]);
-    expect(insertionSnapshots[2].args).toEqual([
-      [60, 40, 20],
-      [[60, 40], [40, 20]],
+    expect(insertionReturns[2].args).toEqual([
       60,
       60,
       {
@@ -399,59 +400,70 @@ describe('SplayTreeInsertion controller', () => {
     ]);
   });
 
-  it('replaces old edges when rendering the next snapshot', () => {
+  it.each([
+    { nodes: [40, 20, 30], side: 'left', left: 20, right: 40, detached: 20, oldRoot: 40 },
+    { nodes: [20, 40, 30], side: 'right', left: 20, right: 40, detached: 40, oldRoot: 20 },
+    { nodes: [40, 20], side: 'left', left: null, right: 40, detached: null, oldRoot: 40 },
+    { nodes: [20, 40], side: 'right', left: 20, right: null, detached: null, oldRoot: 20 },
+  ])('animates $side insertion stages for $nodes without rebuilding at return', ({ nodes, side, left, right, detached, oldRoot }) => {
     const chunks = [];
+    const graph = SplayTreeInsertion.initVisualisers({ visualiser: {} }).graph.instance;
+    SplayTreeInsertion.run(createChunker(chunks), { nodes });
 
-    SplayTreeInsertion.run(
-      createChunker(chunks),
-      { nodes: [40, 20, 60] },
-    );
-
-    const graph = {
-      edges: [{ source: 20, target: 40 }],
-      addNode: jest.fn(),
-      addEdge: jest.fn(),
-      clearTID: jest.fn(),
-      removeEdge: jest.fn(),
-      directed: jest.fn(),
-      layoutAVL: jest.fn(),
-      setMoveRatio: jest.fn(),
-      rectangle_size: jest.fn(),
-      setFunctionInsertText: jest.fn(),
-      setFunctionName: jest.fn(),
-      setNodeColor: jest.fn(),
-      setPauseLayout: jest.fn(),
-    };
-    const insertionSnapshots = getInsertionSnapshots(chunks);
-    const thirdInsertionChunk = insertionSnapshots[2];
-
-    thirdInsertionChunk.callback(
-      { graph },
-      ...thirdInsertionChunk.args,
-    );
-
-    expect(graph.removeEdge).toHaveBeenCalledWith(20, 40);
-    expect(graph.addNode.mock.calls).toEqual([
-      [60, 60],
-      [40, 40],
-      [20, 20],
+    const finalEntry = chunks.map(chunk => chunk.bookmark).lastIndexOf('Main');
+    const saveIndex = chunks.findIndex((chunk, index) => index > finalEntry && chunk.bookmark === `insert-${side}-save`);
+    const stages = chunks.slice(saveIndex, saveIndex + 4);
+    expect(stages.map(chunk => chunk.bookmark)).toEqual([
+      `insert-${side}-save`, `insert-${side}-detach`, `insert-${side}-create`, 'insert-return',
     ]);
-    expect(graph.addEdge.mock.calls).toEqual([
-      [60, 40],
-      [40, 20],
-    ]);
-    expect(graph.setNodeColor.mock.calls).toEqual([
-      [60, undefined],
-      [40, undefined],
-      [20, undefined],
-      [60, colors.NEW_N],
-    ]);
-    expect(graph.setPauseLayout.mock.calls).toEqual([[true], [false]]);
-    expect(graph.clearTID).toHaveBeenCalled();
-    expect(graph.directed).toHaveBeenCalledWith(true);
-    expect(graph.layoutAVL).toHaveBeenCalledWith(60, true);
-    expect(graph.setMoveRatio).toHaveBeenCalledWith(1);
-    expect(graph.setFunctionName).toHaveBeenCalledWith('Inserted: 60');
+    expect(stages.every(chunk => chunk.recursionLevel === 0)).toBe(true);
+
+    const play = ({ callback, args = [] }) => callback({ graph }, ...args);
+    chunks.slice(0, saveIndex).forEach(play);
+    const insertedKey = nodes[nodes.length - 1];
+    const originalTree = graph.getTree();
+    const positions = graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
+    expect(graph.findNode(insertedKey)).toBeUndefined();
+
+    play(stages[0]);
+    expect(graph.getTree()).toEqual(originalTree);
+    if (left !== null) expect(graph.findNode(left).height).toBe('l');
+    if (right !== null) expect(graph.findNode(right).height).toBe('r');
+
+    const removeEdge = jest.spyOn(graph, 'removeEdge');
+    play(stages[1]);
+    if (detached !== null) {
+      expect(removeEdge).toHaveBeenCalledWith(oldRoot, detached);
+      expect(graph.findEdge(oldRoot, detached)).toBeUndefined();
+    } else {
+      expect(removeEdge).not.toHaveBeenCalled();
+    }
+    expect(graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(positions);
+    expect(graph.findNode(insertedKey)).toBeUndefined();
+
+    play(stages[2]);
+    const expectedTree = {};
+    nodes.forEach(key => { expectedTree[key] = {}; });
+    if (left !== null) expectedTree[insertedKey].left = left;
+    if (right !== null) expectedTree[insertedKey].right = right;
+    expect(graph.getTree()).toEqual(expectedTree);
+    expect(graph.getRoot()).toBe(insertedKey);
+    expect(graph.findNode(insertedKey).color).toBe(colors.NEW_N);
+    expect(graph.nodes.every(node => node.height === undefined)).toBe(true);
+
+    const addNode = jest.spyOn(graph, 'addNode');
+    const addEdge = jest.spyOn(graph, 'addEdge');
+    const layout = jest.spyOn(graph, 'layoutAVL');
+    removeEdge.mockClear();
+    const finalPositions = graph.nodes.map(({ id, x, y }) => ({ id, x, y }));
+    play(stages[3]);
+    expect(addNode).not.toHaveBeenCalled();
+    expect(addEdge).not.toHaveBeenCalled();
+    expect(removeEdge).not.toHaveBeenCalled();
+    expect(layout).not.toHaveBeenCalled();
+    expect(graph.getTree()).toEqual(expectedTree);
+    expect(graph.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(finalPositions);
+    expect(graph.functionName).toBe(`Inserted: ${insertedKey}`);
   });
 
   it('turns a rotation event into staged GraphTracer updates', () => {

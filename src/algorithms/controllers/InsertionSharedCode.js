@@ -1756,6 +1756,76 @@ function addSplayInsertionBranchChunk(chunker, event) {
     );
 }
 
+// Ensure three additional steps of animation within splay tree is registered
+function addSplayInsertionSteps(chunker, event, leftKey, rightKey) {
+    if (event.action !== 'insert-left' && event.action !== 'insert-right') return;
+
+    const bookmark = event.action;
+    const detachedKey = event.action === 'insert-left' ? leftKey : rightKey;
+
+    chunker.add(`${bookmark}-save`, (vis, left, right) => {
+        const graph = vis.graph;
+
+        graph.clearTID();
+
+        if (left !== null) {
+            graph.updateTID(left, 'l');
+            graph.setNodeColor(left, colors.PATH_N);
+        }
+
+        if (right !== null) {
+            graph.updateTID(right, 'r');
+            graph.setNodeColor(right, colors.PATH_N);
+        }
+
+        graph.rectangle_size();
+    }, [leftKey, rightKey], 0);
+
+    chunker.add(`${bookmark}-detach`, (vis, oldRoot, detached) => {
+        const graph = vis.graph;
+
+        graph.setPauseLayout(true);
+
+        if (detached !== null) {
+            graph.removeEdge(oldRoot, detached);
+        }
+
+        graph.rectangle_size();
+    }, [event.rootKey, detachedKey], 0);
+
+    chunker.add(`${bookmark}-create`, (vis, insertedKey, left, right) => {
+        const graph = vis.graph;
+
+        graph.setPauseLayout(true);
+        graph.addNode(insertedKey, insertedKey);
+
+        if (left !== null) {
+            graph.addEdge(insertedKey, left);
+        }
+
+        if (right !== null) {
+            graph.addEdge(insertedKey, right);
+        }
+
+        graph.clearTID();
+
+        graph.nodes.forEach(({ id }) => {
+            graph.setNodeColor(id, undefined);
+        });
+
+        graph.edges.forEach(({ source, target }) => {
+            graph.setEdgeColor(source, target, undefined);
+        });
+
+        graph.setNodeColor(insertedKey, colors.NEW_N);
+        graph.directed(true);
+        graph.setMoveRatio(1);
+        graph.setPauseLayout(false);
+        graph.layoutAVL(insertedKey, true);
+        graph.rectangle_size();
+    }, [event.key, leftKey, rightKey], 0);
+}
+
 function addSplaySearchSnapshotChunk(chunker, root, target) {
     if (root === null) {
         chunker.add(
@@ -1970,6 +2040,7 @@ export function createTreeInsertionController(isAVLp = false) {
                         .filter(event => event.type === 'insertion')
                         .forEach(event => {
                             addSplayInsertionBranchChunk(chunker, event);
+                            addSplayInsertionSteps(chunker, event, root.left === null ? null : root.left.key, root.right === null ? null : root.right.key);
                         });
                     const insertionEvent = algorithmEvents.find(
                         event => event.type === 'insertion',
@@ -1981,62 +2052,38 @@ export function createTreeInsertionController(isAVLp = false) {
                         rootKey,
                     } = createSplaySnapshot(root);
 
-                    chunker.add(
-                        insertionEvent.action === 'empty-tree'
-                            ? 'insert-return-empty'
-                            : 'insert-return',
-                        (
-                            vis,
-                            keys,
-                            treeEdges,
-                            snapshotRoot,
-                            insertedKey,
-                            insertion,
-                        ) => {
-                            const graph = vis.graph;
-                            if (graph.clearRectangles) graph.clearRectangles();
-                            if (graph.clearTID) graph.clearTID();
+                    chunker.add(insertionEvent.action === 'empty-tree' ? 'insert-return-empty' : 'insert-return', (vis, snapshotRoot, insertedKey, insertion) => {
+                        const graph = vis.graph;
 
-                            // Splaying changes the parent-child relationships,
-                            // so remove the previous edges before adding the snapshot edges.
+                        if (graph.clearRectangles) graph.clearRectangles();
+                        if (graph.clearTID) graph.clearTID();
+
+                        if (insertion.action === 'empty-tree') {
                             graph.setPauseLayout(true);
-                            [...graph.edges].forEach(({ source, target }) => {
-                                graph.removeEdge(source, target);
-                            });
-                            // Existing nodes are ignored by addNode. Clear the
-                            // traversal colour when displaying the new snapshot.
-                            keys.forEach(nodeKey => {
-                                graph.addNode(nodeKey, nodeKey);
-                                graph.setNodeColor(nodeKey, undefined);
-                            });
-
-                            // add current snapshot edges
-                            treeEdges.forEach(([parent, child]) => {
-                                graph.addEdge(parent, child);
-                            });
-
+                            graph.addNode(insertedKey, insertedKey);
                             graph.directed(true);
+                            graph.setMoveRatio(1);
                             graph.setPauseLayout(false);
-                            if (insertion.action !== 'duplicate') {
-                                graph.setMoveRatio(1);
-                                graph.layoutAVL(snapshotRoot, true);
-                            }
+                            graph.layoutAVL(snapshotRoot, true);
+                        }
 
-                            graph.rectangle_size();
-                            const rootColor = insertion.action === 'duplicate'
-                                ? colors.FOUND_N
-                                : colors.NEW_N;
-                            graph.setNodeColor(snapshotRoot, rootColor);
-                            graph.setFunctionName(
-                                insertion.action === 'duplicate'
-                                    ? getSplayInsertionMessage(insertion)
-                                    : `Inserted: ${insertedKey}`,
-                            );
-                            graph.setFunctionInsertText();
-                        },
-                        [nodeKeys, edges, rootKey, key, insertionEvent],
-                        0,
-                    );
+                        graph.nodes.forEach(({ id }) => {
+                            graph.setNodeColor(id, undefined);
+                        });
+
+                        graph.edges.forEach(({ source, target }) => {
+                            graph.setEdgeColor(source, target, undefined);
+                        });
+
+                        graph.root = snapshotRoot;
+                        graph.rectangle_size();
+
+                        const rootColor = insertion.action === 'duplicate' ? colors.FOUND_N : colors.NEW_N;
+
+                        graph.setNodeColor(snapshotRoot, rootColor);
+                        graph.setFunctionName(insertion.action === 'duplicate' ? getSplayInsertionMessage(insertion) : `Inserted: ${insertedKey}`);
+                        graph.setFunctionInsertText();
+                    }, [root.key, key, insertionEvent], 0);
                 });
 
                 return root;
