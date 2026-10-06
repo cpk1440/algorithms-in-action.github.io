@@ -232,16 +232,16 @@ DelSplay2
 
 \\Code{
 insert_right
-l,r <- t,t.right // left and right subtrees of new tree
-t.right <- Empty
-t <- new node with k and subtrees l and r
+l,r <- t,t.right // left and right subtrees of new tree \\B insert-right-save
+t.right <- Empty \\B insert-right-detach
+t <- new node with k and subtrees l and r \\B insert-right-create
 \\Code}
 
 \\Code{
 insert_left
-l,r <- t.left,t // left and right subtrees of new tree
-t.left <- Empty
-t <- new node with k and subtrees l and r
+l,r <- t.left,t // left and right subtrees of new tree \\B insert-left-save
+t.left <- Empty \\B insert-left-detach
+t <- new node with k and subtrees l and r \\B insert-left-create
 \\Code}
 
 \\Code{
