@@ -414,7 +414,9 @@ describe('SplayTreeInsertion controller', () => {
       clearTID: jest.fn(),
       removeEdge: jest.fn(),
       directed: jest.fn(),
-      layoutBST: jest.fn(),
+      layoutAVL: jest.fn(),
+      setMoveRatio: jest.fn(),
+      rectangle_size: jest.fn(),
       setFunctionInsertText: jest.fn(),
       setFunctionName: jest.fn(),
       setNodeColor: jest.fn(),
@@ -447,7 +449,8 @@ describe('SplayTreeInsertion controller', () => {
     expect(graph.setPauseLayout.mock.calls).toEqual([[true], [false]]);
     expect(graph.clearTID).toHaveBeenCalled();
     expect(graph.directed).toHaveBeenCalledWith(true);
-    expect(graph.layoutBST).toHaveBeenCalledWith(60, true);
+    expect(graph.layoutAVL).toHaveBeenCalledWith(60, true);
+    expect(graph.setMoveRatio).toHaveBeenCalledWith(1);
     expect(graph.setFunctionName).toHaveBeenCalledWith('Inserted: 60');
   });
 
@@ -502,7 +505,9 @@ describe('SplayTreeInsertion controller', () => {
       clearTID: jest.fn(),
       directed: jest.fn(),
       getRoot: jest.fn(() => 40),
-      layoutBST: jest.fn(),
+      layoutAVL: jest.fn(),
+      setMoveRatio: jest.fn(),
+      rectangle_size: jest.fn(),
       removeEdge: jest.fn(),
       setEdgeColor: jest.fn(),
       setFunctionInsertText: jest.fn(),
@@ -539,7 +544,8 @@ describe('SplayTreeInsertion controller', () => {
     expect(graph.setPauseLayout.mock.calls).toEqual([[true], [false]]);
     expect(graph.clearTID).toHaveBeenCalledTimes(1);
     expect(graph.directed).toHaveBeenCalledWith(true);
-    expect(graph.layoutBST).toHaveBeenCalledWith(40, true);
+    expect(graph.layoutAVL).toHaveBeenCalledWith(40, true);
+    expect(graph.setMoveRatio).toHaveBeenCalledWith(3 / 6);
     expect(graph.getRoot).not.toHaveBeenCalled();
     expect(graph.updateTID.mock.calls).toEqual([
       [20, 't2'],
