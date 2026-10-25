@@ -32,7 +32,6 @@
  */ 
 
 import GraphTracer from '../../components/DataStructures/Graph/GraphTracer';
-import Array1DTracer from '../../components/DataStructures/Array/Array1DTracer';
 import { areExpanded } from './collapseChunkPlugin';
 import SplayTree from './splaytree';
 import { insertTree, searchTree } from './treeAlgorithms';
@@ -60,10 +59,11 @@ const uncolor = (graph, root) => {
 // Global flag for insert/search (set when controller init is run)
 
 // checks if either recursive call is expanded
-function isRecursionExpanded(inserting = true) {
-  let mode = (inserting ? 'insertion' : 'search');
-  return areExpanded(['recurseLeft'], mode)
-      || areExpanded(['recurseRight'], mode);
+function isRecursionExpanded(inserting = true, mode = null) {
+  const activeMode = mode || (inserting ? 'insertion' : 'search');
+  const prefix = activeMode === 'operations' ? `${inserting ? 'insert' : 'search'}_` : '';
+  return areExpanded([`${prefix}recurseLeft`], activeMode)
+      || areExpanded([`${prefix}recurseRight`], activeMode);
 }
 
 // Algorithm-specific metadata stays here, outside the shared structural helpers.
@@ -382,7 +382,7 @@ function addAVLLeftRotationChunks(chunker, event) {
 }
 
 
-function addTreeAlgorithmEventChunks(chunker, event, currIndex) {
+function addTreeAlgorithmEventChunks(chunker, event, currIndex, mode) {
     const { key, depth, root, globalRootKey, balance } = event;
     const parentNode = event.parentKey === null ? null : { key: event.parentKey };
     const isInsert = event.operation === 'insert';
@@ -417,7 +417,7 @@ function addTreeAlgorithmEventChunks(chunker, event, currIndex) {
             vis.graph.setFunctionInsertText();
             
             // Only add rectangles when recursion is expanded
-            if (isRecursionExpanded(isInsert)) {
+            if (isRecursionExpanded(isInsert, mode)) {
                 if (rr !== null && rr !== undefined) {
                     let nodeIds = vis.graph.getSubtreeNodes(rr);
                     pushTreeDepthBox(vis.graph, nodeIds, d);
@@ -774,9 +774,9 @@ function addTreeAlgorithmEventChunks(chunker, event, currIndex) {
     }
 }
 
-function insertOrSearch(chunker, root, key, currIndex, { avl = false, operation = 'insert' } = {}) {
+export function insertOrSearch(chunker, root, key, currIndex, { avl = false, operation = 'insert', mode = null } = {}) {
     const isInsert = operation === 'insert';
-    const onEvent = event => addTreeAlgorithmEventChunks(chunker, event, currIndex);
+    const onEvent = event => addTreeAlgorithmEventChunks(chunker, event, currIndex, mode);
     const result = isInsert
         ? insertTree(root, key, { avl, onEvent })
         : searchTree(root, key, { onEvent });
