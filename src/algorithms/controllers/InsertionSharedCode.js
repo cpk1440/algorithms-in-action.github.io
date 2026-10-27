@@ -1882,14 +1882,16 @@ export function createTreeInsertionController(isAVLp = false) {
                         );
                     }
 
-                    if (type !== 'insert' && type !== 'search') {
+                    if (type !== 'insert' && type !== 'search' && type !== 'delete') {
                         throw new Error(
                             `Unknown Splay Tree operation: ${String(type)}`,
                         );
                     }
 
+                    const initBookmark= type === 'search' ? '1' : (type === 'delete' ? 'Del' : 'Main');
+                    const opName = type === 'search' ? 'Search' : (type === 'delete' ? 'Delete' : 'Insert');
                     chunker.add(
-                        type === 'search' ? '1' : 'Main',
+                        initBookmark,
                         (vis, operationType, currentKey, initialize) => {
                             const graph = vis.graph;
                             if (initialize) {
@@ -1909,7 +1911,7 @@ export function createTreeInsertionController(isAVLp = false) {
                                 graph.setEdgeColor(source, child, undefined);
                             });
                             graph.setFunctionName(
-                                `${operationType === 'search' ? 'Search' : 'Insert'}: ${currentKey}`,
+                                `${opName}: ${currentKey}`,
                             );
                             graph.setFunctionInsertText();
                         },
@@ -1932,6 +1934,10 @@ export function createTreeInsertionController(isAVLp = false) {
                             'search', key, initialRootKey, mode,
                         );
                         addSplaySearchSnapshotChunk(chunker, root, key);
+                        return;
+                    }
+                    if(type === 'delete') {
+                        root = SplayTree.delete(root, key);
                         return;
                     }
 

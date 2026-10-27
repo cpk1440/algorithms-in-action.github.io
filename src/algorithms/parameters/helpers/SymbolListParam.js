@@ -53,22 +53,34 @@ function SymbolListParam({
                 const valueString = token.substring(1);
 
                 // Check for a valid search value
-                if(!/^-?\d+$/.test(valueString)){
+                if(!/^\d+$/.test(valueString)){
                     setMessage(`Invalid input: ${token}. Can't do a search with this!`);
                     return;
                 }
+              
+              operations.push({ type: 'search', value: parseInt(valueString, 10) });
 
-                // Push search value
-                operations.push({ type: 'search', value: parseInt(valueString, 10) });
+            } else if(token.startsWith('-')){
+                const valueString = token.substring(1);
+
+                // Check for a valid search value
+                if(!/^\d+$/.test(valueString)){
+                    setMessage(`Invalid input: ${token}. Can't do a deletion with this!`);
+                    return;
+              }
+
+                // Push deletion value
+                operations.push({ type: 'delete', value: parseInt(valueString, 10) });
             } else{
-                if(!/^-?\d+$/.test(token)){
+                if(!/^\d+$/.test(token)){
                     setMessage(`Invalid input: ${token}. Can't build a tree with this!`);
                     return;
                 }
                 // Push insertion value
                 operations.push({ type: 'insert', value: parseInt(token, 10) });
             }
-        }
+          }
+
         dispatch(GlobalActions.RUN_ALGORITHM, {name, mode, operations});
         setMessage(null);
     };

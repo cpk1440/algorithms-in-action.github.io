@@ -42,6 +42,19 @@ class SplayTree {
     }
   }
 
+  static reportDeletion(onEvent, action, key, rootKey, extra = {}) {
+    if (onEvent) {
+      onEvent({
+        type: 'deletion',
+        action,
+        bookmark: 'Del',
+        key,
+        rootKey,
+        ...extra,
+      });
+    }
+  }
+
   static rightRotate(root) {
     const newRoot = root.left;
     root.left = newRoot.right;
@@ -280,19 +293,33 @@ class SplayTree {
    * the new root before the original right subtree is reattached.
    */
   static delete(root, key, onEvent = null) {
-    if (root === null) return root;
+    if (root === null){
+      SplayTree.reportDeletion(onEvent, 'empty-tree', key, null);
+      return root;
+    }
 
     const splayedRoot = SplayTree.splay(root, key, onEvent);
 
-    if (splayedRoot.key !== key) return splayedRoot;
-    if (splayedRoot.left === null) return splayedRoot.right;
+    if (splayedRoot.key !== key) {
+      SplayTree.reportDeletion(onEvent, 'not-found', key, splayedRoot.key);
+      return splayedRoot;
+    }
+    if (splayedRoot.left === null) {
+      SplayTree.reportDeletion(onEvent, 'left-empty', key, splayedRoot.key);
+      return splayedRoot.right
+    }
 
     const rightSubtree = splayedRoot.right;
+    SplayTree.reportDeletion(onEvent, 'detach-right', key, splayedRoot.key,
+      { rightSubtreeKey: rightSubtree ? rightSubtree.key : null});
+
     const newRoot = SplayTree.splay(splayedRoot.left, key, onEvent);
     newRoot.right = rightSubtree;
 
+    SplayTree.reportDeletion(onEvent, 'reattach-right', key, newRoot.key,
+      { rightSubtreeKey: rightSubtree ? rightSubtree.key : null});
     return newRoot;
-  }
+  
 }
-
+}
 export default SplayTree;
