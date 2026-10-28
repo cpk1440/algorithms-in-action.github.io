@@ -1217,10 +1217,17 @@ export function getSplayRecursionFrames(root, key) {
     return frames;
 }
 
-function isSplayDepthExpanded(operationType, recursionBlocks = [], mode = 'operations') {
-    const operationBlock = operationType === 'search'
-        ? 'search_splay'
-        : 'insert_splay';
+function isSplayDepthExpanded(operationType, recursionBlocks = [], mode = 'operations', splayPhase=1) {
+    let operationBlock;
+    if(operationType === 'search') {
+        operationBlock= 'search_splay';
+    }
+    else if(operationType === 'delete') {
+        operationBlock= splayPhase === 1 ? 'DelSplay1' : 'DelSplay2';
+    }
+    else{
+        operationBlock= 'insert_splay';
+    }
 
     return areExpanded([operationBlock, ...recursionBlocks], mode);
 }
@@ -1236,11 +1243,12 @@ function getSplayCaseLabel(splayCase, rotationCount) {
     return `Zig-Zag (${splayCase})`;
 }
 
-function addSplayDepthBox(graph, frame, operationType, rotationCount, recursionBlocks, mode) {
+function addSplayDepthBox(graph, frame, operationType, rotationCount, recursionBlocks, mode, splayPhase=1) {
     if (!frame || !isSplayDepthExpanded(
         operationType,
         recursionBlocks,
         mode,
+        splayPhase
     )) return;
 
     graph.pushRectStack(frame.nodeKeys, `Depth ${frame.depth}`);
@@ -1595,8 +1603,8 @@ export function addSplayRotationChunks(
 // then the caller's assignment. Collapsed blocks use these levels to skip
 // the entire call, even though the Splay function itself is in Main.
 function addSplayCallChunks(
-    chunker, frames, searchPath, events, operationType, key, initialRootKey, mode,
-) {
+    chunker, frames, searchPath, events, operationType, key, initialRootKey, mode, splayPhase=1) {
+    const opName = operationType === 'search' ? 'Search' : (operationType === 'delete' ? 'Delete' : 'Insert');
     const callFrames = frames.length > 0 ? frames : [{
         depth: 1,
         nodeKeys: [],
@@ -1622,7 +1630,8 @@ function addSplayCallChunks(
             }
             if (graph.clearTID) graph.clearTID();
             if (graph.setTagInfo) graph.setTagInfo('');
-            graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
+           
+            graph.setFunctionName(`${opName}: ${target}`);
             graph.setFunctionInsertText(caller
                 ? ` splayCase: ${getSplayCaseLabel(caller.splayCase, rotationsByDepth[caller.depth] || 0)}`
                 : undefined);
@@ -1639,10 +1648,10 @@ function addSplayCallChunks(
         chunker.add('splay-enter', (vis, currentFrame, target, count, blocks) => {
             const graph = vis.graph;
             if (graph.clearTID) graph.clearTID();
-            graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
+            graph.setFunctionName(`${opName}: ${target}`);
             graph.setFunctionInsertText();
             if (currentFrame.nodeKeys.length > 0) {
-                addSplayDepthBox(graph, currentFrame, operationType, count, blocks, mode);
+                addSplayDepthBox(graph, currentFrame, operationType, count, blocks, mode, splayPhase);
             }
         }, [frame, key, rotationCount, recursionBlocks], depth);
 
@@ -1656,7 +1665,7 @@ function addSplayCallChunks(
             graph.edges.forEach(({ source, target: child }) => {
                 graph.setEdgeColor(source, child, undefined);
             });
-            graph.setFunctionName(`${operationType === 'search' ? 'Search' : 'Insert'}: ${target}`);
+            graph.setFunctionName(`${opName}: ${target}`);
             pathNodes.forEach((nodeKey, pathIndex) => {
                 graph.setNodeColor(nodeKey, colors.PATH_N);
                 if (pathIndex > 0) {
@@ -1685,9 +1694,12 @@ function addSplayCallChunks(
         chunker.add('DoneSplay', () => {}, [], depth);
     }
 
-    chunker.add(`pre-${operationType}-splay`, () => {}, [], 0);
+    const preBookmark = operationType === 'delete' ? (splayPhase === 1 ? 'Del_splay1' : 'Del_splay2') : `pre-${operationType}-splay`;
+    const callBookmark = operationType === 'delete' ? (splayPhase === 1 ? 'Del_splay1' : 'Del_splay2') : `${operationType}-splay-call`;
+
+    chunker.add(preBookmark, () => {}, [], 0);
     visitCall(0);
-    resumeCaller(`${operationType}-splay-call`, 0);
+    resumeCaller(callBookmark, 0);
 }
 
 function getSplayInsertionMessage(event) {
@@ -1888,8 +1900,8 @@ export function createTreeInsertionController(isAVLp = false) {
                         );
                     }
 
-                    const initBookmark= type === 'search' ? '1' : (type === 'delete' ? 'Del' : 'Main');
-                    const opName = type === 'search' ? 'Search' : (type === 'delete' ? 'Delete' : 'Insert');
+                    const initBookmark = type === 'search' ? '1' : (type === 'delete' ? 'Del' : 'Main');
+
                     chunker.add(
                         initBookmark,
                         (vis, operationType, currentKey, initialize) => {
@@ -1910,6 +1922,8 @@ export function createTreeInsertionController(isAVLp = false) {
                             graph.edges.forEach(({ source, target: child }) => {
                                 graph.setEdgeColor(source, child, undefined);
                             });
+
+                            const opName = operationType === 'search' ? 'Search' : (operationType === 'delete' ? 'Delete' : 'Insert');
                             graph.setFunctionName(
                                 `${opName}: ${currentKey}`,
                             );
@@ -1937,7 +1951,151 @@ export function createTreeInsertionController(isAVLp = false) {
                         return;
                     }
                     if(type === 'delete') {
-                        root = SplayTree.delete(root, key);
+                        if (root === null) {
+                            chunker.add('Del_t_Empty',
+                                (vis, k) => {
+                                    const graph = vis.graph;
+                                    if (graph.clearRectangles) graph.clearRectangles();
+                                    if (graph.clearTID) graph.clearTID();
+                                    if (graph.setTagInfo) graph.setTagInfo('');
+                                    graph.setFunctionName(`Delete: ${k} (tree is empty)`);
+                                    graph.setFunctionInsertText();
+                                }, [key], 0,
+                            );
+
+                            chunker.add(
+                                'Del_return1',
+                                (vis) => {
+                                    vis.graph.setFunctionName(`Tree is empty, return`);
+                                    vis.graph.setFunctionInsertText();
+                                }, [], 0,
+                            );
+
+                            return;
+                        }
+
+                        const searchPath = getSplayTreePath(root, key);
+                        const recursionFrames = getSplayRecursionFrames(root, key);
+                        const initialRootKey = root.key;
+                        const algorithmEvents = [];
+                        root = SplayTree.splay(root, key, event => algorithmEvents.push(event));
+
+                        if(searchPath.length > 0) {
+                            addSplayCallChunks(
+                                chunker, recursionFrames, searchPath, algorithmEvents,
+                                'delete', key, initialRootKey, mode, 1 //(Splay phase 1)
+                            );
+                        }
+
+                        if(root.key !== key) {
+                            chunker.add('Del_not_found',
+                                (vis, k, actualRootKey) => {
+                                    const graph = vis.graph;
+                                    if (graph.clearRectangles) graph.clearRectangles();
+                                    if (graph.clearTID) graph.clearTID();
+                                    if (graph.setTagInfo) graph.setTagInfo('');
+                                    graph.nodes.forEach(({ id }) => graph.setNodeColor(id, undefined));
+                                    graph.edges.forEach(({ source, target: child }) => {
+                                    graph.setEdgeColor(source, child, undefined)});
+                                    graph.setNodeColor(actualRootKey, colors.NOT_EQ_N || colors.PATH_N);
+                                    graph.setFunctionName(`Key ${k} not found (closest key: ${actualRootKey} splayed to root)`);
+                                    graph.setFunctionInsertText();
+                                        
+                                }, [key, root.key], 0);
+
+                            chunker.add(
+                                'Del_return2',
+                                (vis) => {
+                                    vis.graph.setFunctionName(`Return unchanged tree`);
+                                    vis.graph.setFunctionInsertText();
+                                }, [], 0,);
+                            return;
+                        }
+
+                        if(root.key === key) {
+                            if(root.left === null) {
+                                chunker.add('Del_left_empty',
+                                    (vis, k) => {
+                                        const graph = vis.graph;
+                                        if (graph.clearRectangles) graph.clearRectangles();
+                                        if (graph.clearTID) graph.clearTID();
+                                        graph.nodes.forEach(({ id }) => graph.setNodeColor(id, undefined));
+                                        graph.edges.forEach(({ source, target: child }) => {
+                                        graph.setEdgeColor(source, child, undefined)});
+                                        graph.setNodeColor(k, colors.ROT_N);
+                                        graph.setFunctionName(`Left subtree is empty, promote right child`);
+                                        graph.setFunctionInsertText();
+                                    }, [key], 0,);
+                                const newRoot = root.right;
+                                chunker.add(
+                                    'Del_return3',
+                                    (vis, k, promotedRootKey) => {
+                                        const graph = vis.graph;
+                                        graph.removeNode(k);
+                                        if (promotedRootKey !== null && promotedRootKey !== undefined) {
+                                            graph.layoutBST(promotedRootKey, true);
+                                            graph.setNodeColor(promotedRootKey, colors.NEW_N);
+                                        }
+                                        graph.setFunctionName(`Deleted: ${k}`);
+                                        graph.setFunctionInsertText();
+                                    }, [key, newRoot ? newRoot.key : null], 0,);
+
+                                root = newRoot;
+                                return;
+                            }
+
+                            else{
+                                const rightSubtree = root.right;
+                                chunker.add('Del_init_temp',
+                                    (vis, rootKey, rightChildKey) => {
+                                        const graph = vis.graph;
+                                        if(rightChildKey !== null && rightChildKey !== undefined) {
+                                            graph.removeEdge(rootKey, rightChildKey);
+                                            if(graph.updateTID) graph.updateTID(rightChildKey, 'temp');
+                                        }
+                                        graph.setNodeColor(rootKey, colors.ROT_N);
+                                        graph.setFunctionName(`save right subtree of ${rootKey} in temp`);
+                                        graph.setFunctionInsertText();
+                                    }, [root.key, rightSubtree ? rightSubtree.key : null], 0,);
+
+                                chunker.add(
+                                    'Del_init_temp',
+                                    (vis, rootKey, leftChildKey) => {
+                                        const graph = vis.graph;
+                                        graph.removeNode(rootKey);
+                                        if(leftChildKey !== null && leftChildKey !== undefined) {
+                                            graph.layoutBST(leftChildKey, true);
+                                        }
+                                    }, [root.key, root.left ? root.left.key : null], 0,);
+
+
+                                const leftSubtree = root.left;
+                                const searchPath2 = getSplayTreePath(leftSubtree, key);
+                                const recursionFrames2 = getSplayRecursionFrames(leftSubtree, key);
+                                const initialLeftRootKey = leftSubtree.key;
+                                const splay2Events = [];
+                                const newRoot = SplayTree.splay(leftSubtree, key, event => splay2Events.push(event));
+
+                                if(searchPath2.length > 0) {
+                                    addSplayCallChunks(chunker, recursionFrames2, searchPath2, splay2Events,
+                                        'delete', key, initialLeftRootKey, mode, 2);
+                                }
+
+                                chunker.add('Del_use_temp',
+                                    (vis, leftRootKey, rightChildKey) => {
+                                        const graph = vis.graph;
+                                        if(rightChildKey !== null && rightChildKey !== undefined) {
+                                            graph.addEdge(leftRootKey, rightChildKey);
+                                        }
+                                        if(graph.clearTID) graph.clearTID();
+                                        graph.setFunctionName('t.right <- temp (attach saved right subtree)');
+                                        graph.setFunctionInsertText();
+                                    }, [newRoot.key, rightSubtree ? rightSubtree.key : null], 0,);
+                                newRoot.right = rightSubtree;
+                                root = newRoot;
+                            }
+                        }
+
                         return;
                     }
 

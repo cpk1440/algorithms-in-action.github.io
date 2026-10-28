@@ -218,7 +218,8 @@ describe('SplayTree.delete', () => {
 
     expect(result.key).toBe(40);
     expect(inOrder(result)).toEqual([20, 30, 40, 70]);
-    expect(events.map(event => event.direction)).toEqual(['left']);
+    expect(events.filter(event=> event.type ==='rotation')
+    .map(event => event.direction)).toEqual(['left']);
   });
 });
 

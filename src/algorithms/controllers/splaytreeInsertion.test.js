@@ -1261,9 +1261,17 @@ describe('SplayTreeInsertion controller', () => {
     it('rejects unknown operations', () => {
       expect(() => SplayTreeInsertion.run(createChunker(), {
         operations: [
+          { type: 'unsupported', value: 20 },
+        ],
+      })).toThrow('Unknown Splay Tree operation: unsupported');
+    });
+
+    it('accepts delete operations', () => {
+      expect(() => SplayTreeInsertion.run(createChunker(), {
+        operations: [
           { type: 'delete', value: 20 },
         ],
-      })).toThrow('Unknown Splay Tree operation: delete');
+      })).not.toThrow();
     });
   });
 });
