@@ -1285,5 +1285,70 @@ describe('SplayTreeInsertion controller', () => {
       });
       expect(graph.functionName).toBe('Deleted: 20');
     });
+
+    it('executes a mixed sequence of insert, search, and delete operations', () => {
+      const chunks = [];
+      const graph = SplayTreeInsertion.initVisualisers({visualiser: {} }).graph.instance;
+      const operations = [
+        {type: 'insert', value: 10},
+        {type: 'insert', value: 5},
+        {type: 'search', value: 5},
+        {type: 'delete', value: 5},
+        {type: 'search', value: 5},
+      ];
+
+      const root = SplayTreeInsertion.run(createChunker(chunks), {operations});
+
+      expect(root.key).toBe(10);
+      expect(inOrder(root)).toEqual([10]);
+      expect(countNodes(root)).toBe(1);
+
+      const searchChunks = chunks.filter(c => c.bookmark === 'search-return-found' ||
+      c.bookmark === 'search-return-not-found');
+      expect(searchChunks).toHaveLength(2);
+      searchChunks[0].callback({graph}, ...searchChunks[0].args);
+      expect(graph.functionName).toBe('Found: 5');
+
+      expect(searchChunks[1].bookmark).toBe('search-return-not-found');
+      searchChunks[1].callback({graph}, ...searchChunks[1].args);
+      expect(graph.functionName).toBe('Not found: 5');
+    });
+
+    it('registers the complete chunk bookmark sequence for a two-subtree deletion',()=>{
+      const chunks= [];
+      const operations = [
+        {type: 'insert', value: 20},
+        {type: 'insert', value: 10},
+        {type: 'insert', value: 30},
+        {type: 'delete', value: 20},
+
+      ];
+
+      SplayTreeInsertion.run(createChunker(chunks), {operations});
+      const bookmarks = chunks.map(c=>c.bookmark);
+
+      expect(bookmarks).toContain('Del');
+      expect(bookmarks).toContain('Del_splay1');
+      expect(bookmarks).toContain('Del_init_temp');
+      expect(bookmarks).toContain('Del_splay2');
+      expect(bookmarks).toContain('Del_use_temp');
+      expect(bookmarks).toContain('Del_return4');
+      
+      const delIdx = bookmarks.indexOf('Del');
+      const splay1Idx = bookmarks.indexOf('Del_splay1', delIdx);
+      const initTempIdx = bookmarks.indexOf('Del_init_temp', splay1Idx);
+      const splay2Idx = bookmarks.indexOf('Del_splay2', initTempIdx);
+      const useTempIdx = bookmarks.indexOf('Del_use_temp', splay2Idx);
+      const return4Idx = bookmarks.indexOf('Del_return4', useTempIdx);
+
+      expect(delIdx).toBeGreaterThanOrEqual(0);
+      expect(splay1Idx).toBeGreaterThan(delIdx);
+      expect(initTempIdx).toBeGreaterThan(splay1Idx);
+      expect(splay2Idx).toBeGreaterThan(initTempIdx);
+      expect(useTempIdx).toBeGreaterThan(splay2Idx);
+      expect(return4Idx).toBeGreaterThan(useTempIdx);
+    });
+
+
   });
 });
