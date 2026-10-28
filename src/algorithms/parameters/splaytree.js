@@ -61,7 +61,7 @@ const BlueRadio = withStyles({
 })((props) => <Radio {...props} />);
 
 /** NOTE: Mode and Value removed as component now only requires 
- * combined list input to run both insertion and search.
+ * combined list input to run insertion, search and deletion.
  */
 function SplayTreeParam({list}) {
   //const { algorithm, dispatch } = useContext(GlobalContext);
@@ -109,7 +109,7 @@ function SplayTreeParam({list}) {
         <SymbolListParam
           name = "splaytree"
 
-          buttonName = "Insert & Search"
+          buttonName = "Insert, Search & Delete"
 
           mode = "operations"
 

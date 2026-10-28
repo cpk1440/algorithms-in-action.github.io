@@ -1370,6 +1370,7 @@ export function addSplayRotationChunk(
     renderedRootKey = null,
     includeCaseStep = true,
     mode = 'operations',
+    splayPhase = 1
 ) {
     const bookmarks = getSplayRotationBookmarks(event.direction);
     const rotationName = `${event.direction === 'right' ? 'Right' : 'Left'} rotation: ${event.pivotKey}`;
@@ -1549,9 +1550,9 @@ export function addSplayRotationChunk(
             );
             if (graph.rectangle_size) graph.rectangle_size();
             graph.setFunctionName(
-                isSplayDepthExpanded(operationType, [], mode)
+                isSplayDepthExpanded(operationType, [], mode, splayPhase)
                     ? `${caseLabel} — ${rotationName}`
-                    : rotationName,
+                    : rotationName, 
             );
             if (graph.setFunctionInsertText) {
                 graph.setFunctionInsertText(` splayCase: ${caseLabel}`);
@@ -1688,7 +1689,7 @@ function addSplayCallChunks(
         rotationEvents.filter(event => event.depth === depth).forEach(event => {
             if (event.parentKey === null) renderedRootKey = event.newRootKey;
             addSplayRotationChunk(
-                chunker, event, operationType, rotationCount, renderedRootKey, false, mode,
+                chunker, event, operationType, rotationCount, renderedRootKey, false, mode, splayPhase
             );
         });
         chunker.add('DoneSplay', () => {}, [], depth);
@@ -2031,7 +2032,9 @@ export function createTreeInsertionController(isAVLp = false) {
                                     'Del_return3',
                                     (vis, k, promotedRootKey) => {
                                         const graph = vis.graph;
+                                        graph.setPauseLayout(true);
                                         graph.removeNode(k);
+                                        graph.setPauseLayout(false);
                                         if (promotedRootKey !== null && promotedRootKey !== undefined) {
                                             graph.layoutBST(promotedRootKey, true);
                                             graph.setNodeColor(promotedRootKey, colors.NEW_N);
@@ -2050,7 +2053,9 @@ export function createTreeInsertionController(isAVLp = false) {
                                     (vis, rootKey, rightChildKey) => {
                                         const graph = vis.graph;
                                         if(rightChildKey !== null && rightChildKey !== undefined) {
+                                            graph.setPauseLayout(true);
                                             graph.removeEdge(rootKey, rightChildKey);
+                                            graph.setPauseLayout(false);
                                             if(graph.updateTID) graph.updateTID(rightChildKey, 'temp');
                                         }
                                         graph.setNodeColor(rootKey, colors.ROT_N);
@@ -2062,7 +2067,9 @@ export function createTreeInsertionController(isAVLp = false) {
                                     'Del_init_temp',
                                     (vis, rootKey, leftChildKey) => {
                                         const graph = vis.graph;
+                                        graph.setPauseLayout(true);
                                         graph.removeNode(rootKey);
+                                        graph.setPauseLayout(false);
                                         if(leftChildKey !== null && leftChildKey !== undefined) {
                                             graph.layoutBST(leftChildKey, true);
                                         }
@@ -2085,7 +2092,9 @@ export function createTreeInsertionController(isAVLp = false) {
                                     (vis, leftRootKey, rightChildKey) => {
                                         const graph = vis.graph;
                                         if(rightChildKey !== null && rightChildKey !== undefined) {
+                                            graph.setPauseLayout(true);
                                             graph.addEdge(leftRootKey, rightChildKey);
+                                            graph.setPauseLayout(false);
                                         }
                                         if(graph.clearTID) graph.clearTID();
                                         graph.setFunctionName('t.right <- temp (attach saved right subtree)');
@@ -2093,6 +2102,31 @@ export function createTreeInsertionController(isAVLp = false) {
                                     }, [newRoot.key, rightSubtree ? rightSubtree.key : null], 0,);
                                 newRoot.right = rightSubtree;
                                 root = newRoot;
+
+                                const {nodeKeys, edges, rootKey} = createSplaySnapshot(root);
+                                chunker.add(
+                                    'Del_return4',
+                                    (vis, keys, treeEdges, snapshotRoot, deletedKey) => {
+                                        const graph = vis.graph;
+                                        if (graph.clearRectangles) graph.clearRectangles();
+                                        if (graph.clearTID) graph.clearTID();
+                                        if (graph.setTagInfo) graph.setTagInfo('');
+                                        graph.setPauseLayout(true);
+                                        [...graph.edges].forEach(({ source, target}) => graph.removeEdge(source, target));
+                                        keys.forEach(nodeKey => {
+                                            graph.addNode(nodeKey, nodeKey);
+                                            graph.setNodeColor(nodeKey, undefined);
+                                        });
+                                        treeEdges.forEach(([parent, child]) => graph.addEdge(parent, child));
+                                        graph.directed(true);
+                                        graph.setPauseLayout(false);
+                                        if(snapshotRoot !== null && snapshotRoot !== undefined) {
+                                            graph.layoutBST(snapshotRoot, true);
+                                        }
+                                        graph.setFunctionName(`Deleted: ${deletedKey}`);
+                                        graph.setFunctionInsertText();
+                                        
+                                    }, [nodeKeys, edges, rootKey, key], 0,);
                             }
                         }
 

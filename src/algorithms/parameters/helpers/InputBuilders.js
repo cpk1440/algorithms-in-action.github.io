@@ -83,62 +83,69 @@ export const sortAndInterleaveSearches = (operations) => {
   const operationList = Array.isArray(operations)
     ? operations
     : operations.split(',');
+
+  const isNonInsert = (op) => String(op).startsWith('?') || String(op).startsWith('-');
+
   const insertions = operationList
-    .filter((operation) => !String(operation).startsWith('?'))
+    .filter((operation) => !isNonInsert(operation))
     .sort((a, b) => Number(a) - Number(b));
-  const searches = operationList
-    .filter((operation) => String(operation).startsWith('?'));
+  const specialOps = operationList.filter(isNonInsert);
+
   const result = [];
   let insertionIndex = 0;
-  let searchIndex = 0;
+  let specialIndex = 0;
 
-  while (insertionIndex < insertions.length && searchIndex < searches.length) {
+  while (insertionIndex < insertions.length && specialIndex < specialOps.length) {
     const insertionsRemaining = insertions.length - insertionIndex;
-    const searchesRemaining = searches.length - searchIndex;
+    const specialOpsRemaining = specialOps.length - specialIndex;
     const chooseInsertion = Math.random()
-      < insertionsRemaining / (insertionsRemaining + searchesRemaining);
+      < insertionsRemaining / (insertionsRemaining + specialOpsRemaining);
 
     if (chooseInsertion) {
       result.push(insertions[insertionIndex]);
       insertionIndex += 1;
     } else {
-      result.push(searches[searchIndex]);
-      searchIndex += 1;
+      result.push(specialOps[specialIndex]);
+      specialIndex += 1;
     }
   }
 
   return result
     .concat(insertions.slice(insertionIndex))
-    .concat(searches.slice(searchIndex));
+    .concat(specialOps.slice(specialIndex));
 };
 
 export const balancedAndInterleaveSearches = (operations) => { 
   const operationList = Array.isArray(operations) ? operations : operations.split(',');
 
+
+  const isNonInsert = (op) => String(op).startsWith('?') || String(op).startsWith('-');
   // Balance insertions values only
-  const insertions = operationList.filter((operation) => !String(operation).startsWith('?')).map(Number).sort((a, b) => a - b);
+  const insertions = operationList.filter((operation) => !isNonInsert(operation)).sort((a, b) => a - b);
   // Filter out search values 
-  const searches = operationList.filter((operation) => String(operation).startsWith('?'))
+  const specialOps = operationList.filter(isNonInsert);
 
   const balancedInserts = balanceBSTArray(insertions); 
   const res = [];
 
   let insertIdx = 0;
-  let searchIdx = 0;
+  let specialIdx = 0;
 
-  while( insertIdx < balancedInserts.length || searchIdx < searches.length){
-    if(insertIdx < balancedInserts.length){
+  while( insertIdx < balancedInserts.length && specialIdx < specialOps.length){
+    const insertRemaining = balancedInserts.length - insertIdx;
+    const specialRemaining = specialOps.length - specialIdx;
+    const chooseInsertion = Math.random() < insertRemaining / (insertRemaining + specialRemaining);
+
+    if(chooseInsertion){
       res.push(balancedInserts[insertIdx]);
       insertIdx += 1;
-    }
-    
-    if(searchIdx < searches.length){
-      res.push(searches[searchIdx]);
-      searchIdx += 1;
+    }else{
+      res.push(specialOps[specialIdx]);
+      specialIdx += 1;
     }
   }
 
-  return res;
+  return res.concat(balancedInserts.slice(insertIdx)).concat(specialOps.slice(specialIdx));
 }
 
 export const quicksortPerfectPivotArray = (minA, maxA) => {

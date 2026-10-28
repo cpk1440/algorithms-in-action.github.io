@@ -1266,12 +1266,24 @@ describe('SplayTreeInsertion controller', () => {
       })).toThrow('Unknown Splay Tree operation: unsupported');
     });
 
-    it('accepts delete operations', () => {
-      expect(() => SplayTreeInsertion.run(createChunker(), {
-        operations: [
-          { type: 'delete', value: 20 },
-        ],
-      })).not.toThrow();
+    it('accepts delete operations and executes Del_return4 callback', () => {
+      const chunks = [];
+      const graph = SplayTreeInsertion.initVisualisers({ visualiser: {} }).graph.instance;
+      const operations = [
+        { type: 'insert', value: 20 },
+        { type: 'insert', value: 10 },
+        { type: 'insert', value: 30 },
+        { type: 'delete', value: 20 },
+      ];
+      expect(() => SplayTreeInsertion.run(createChunker(chunks), { operations })).not.toThrow();
+      const return4Chunk = chunks.find(c => c.bookmark === 'Del_return4');
+      expect(return4Chunk).toBeDefined();
+      chunks.forEach(({ callback, args = [] }) => {
+        if (callback) {
+          callback({ graph }, ...args);
+        }
+      });
+      expect(graph.functionName).toBe('Deleted: 20');
     });
   });
 });
